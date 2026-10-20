@@ -1,0 +1,88 @@
+<div class="row justify-content-center">
+  <div class="col-12 col-md-8 col-lg-5">
+    <section class="card border-0 shadow-sm">
+      <div class="card-body p-4 p-md-5">
+        <div class="text-center mb-4">
+          <span class="brand-mark mx-auto mb-3">H</span>
+          <p class="text-uppercase small fw-bold text-primary mb-2">HackHub</p>
+          <h1 class="h3 fw-bold">{{ isRegistering() ? 'Crea il tuo account' : 'Accedi a HackHub' }}</h1>
+          <p class="text-secondary mb-0">
+            {{ isRegistering() ? 'Partecipa agli hackathon e crea il tuo team.' : 'Gestisci team, eventi e sottomissioni.' }}
+          </p>
+        </div>
+
+        @if (error(); as message) {
+          <div class="alert alert-danger" role="alert">{{ message }}</div>
+        }
+
+        <form (submit)="submit($event)" novalidate>
+          @if (isRegistering()) {
+            <div class="mb-3">
+              <label class="form-label fw-semibold" for="name">Nome</label>
+              <input class="form-control form-control-lg" id="name" name="name" required minlength="2" maxlength="100" autocomplete="name" placeholder="Il tuo nome" />
+            </div>
+          }
+          <div class="mb-3">
+            <label class="form-label fw-semibold" for="email">Email</label>
+            <input class="form-control form-control-lg" id="email" name="email" type="email" required maxlength="254" autocomplete="email" placeholder="nome@esempio.it" />
+          </div>
+          <div class="mb-4">
+            <label class="form-label fw-semibold" for="password">Password</label>
+            <input class="form-control form-control-lg" id="password" name="password" type="password" required minlength="8" maxlength="128" autocomplete="{{ isRegistering() ? 'new-password' : 'current-password' }}" placeholder="Almeno 8 caratteri" />
+            @if (isRegistering()) { <div class="form-text">La password deve contenere tra 8 e 128 caratteri.</div> }
+          </div>
+          <button class="btn btn-primary btn-lg w-100" type="submit" [disabled]="loading()">
+            @if (loading()) { <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span> }
+            {{ isRegistering() ? 'Registrati' : 'Accedi' }}
+          </button>
+        </form>
+
+        <p class="text-center text-secondary mt-4 mb-0">
+          {{ isRegistering() ? 'Hai già un account?' : 'Non hai un account?' }}
+          <button class="btn btn-link p-0 align-baseline" type="button" (click)="toggleMode()">
+            {{ isRegistering() ? 'Accedi' : 'Registrati' }}
+          </button>
+        </p>
+
+        @if (!isRegistering()) {
+          <div class="alert alert-light border small mt-4 mb-0">
+            <strong class="d-block mb-2">Credenziali utenti demo</strong>
+            <div class="table-responsive">
+              <table class="table table-sm align-middle mb-0">
+                <thead>
+                  <tr>
+                    <th scope="col">Ruolo</th>
+                    <th scope="col">Email</th>
+                    <th scope="col">Password</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Utente</td>
+                    <td><code>mario&#64;hackhub.it</code></td>
+                    <td><code>password</code></td>
+                  </tr>
+                  <tr>
+                    <td>Organizzatore</td>
+                    <td><code>admin&#64;hackhub.it</code></td>
+                    <td><code>password</code></td>
+                  </tr>
+                  <tr>
+                    <td>Giudice</td>
+                    <td><code>giudice&#64;hackhub.it</code></td>
+                    <td><code>password</code></td>
+                  </tr>
+                  <tr>
+                    <td>Mentore</td>
+                    <td><code>mentore&#64;hackhub.it</code></td>
+                    <td><code>password</code></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        }
+      </div>
+    </section>
+  </div>
+</div>
