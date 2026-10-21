@@ -1,0 +1,38 @@
+<div class="d-flex flex-wrap align-items-end justify-content-between gap-3 mb-4">
+  <div><p class="text-uppercase small fw-bold text-primary mb-2">Scopri e partecipa</p><h1 class="display-6 fw-bold mb-2">Hackathon</h1><p class="text-secondary mb-0">Consulta gli eventi e iscrivi il tuo team quando le iscrizioni sono aperte.</p></div>
+  @if (!loading()) { <span class="badge rounded-pill text-bg-primary px-3 py-2">{{ hackathons().length }} eventi</span> }
+</div>
+@if (error(); as message) { <div class="alert alert-danger" role="alert">{{ message }}</div> }
+@if (notice(); as message) { <div class="alert alert-success" role="status">{{ message }}</div> }
+@if (loading()) {
+  <div class="text-center py-5"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Caricamento...</span></div></div>
+} @else if (hackathons().length === 0) {
+  <div class="card border-0 shadow-sm"><div class="card-body p-5 text-center"><h2 class="h5">Nessun hackathon disponibile</h2><p class="text-secondary mb-0">Gli eventi pubblici compariranno qui.</p></div></div>
+} @else {
+  @if (registeredHackathons().length) {
+    <h2 class="h4 fw-bold mb-3">I miei hackathon</h2>
+    <div class="row g-4 mb-5">@for (item of registeredHackathons(); track item.id) { <ng-container *ngTemplateOutlet="card; context: { item: item }"></ng-container> }</div>
+  }
+  @if (assignedHackathons().length) {
+    <h2 class="h4 fw-bold mb-3">Hackathon assegnati</h2>
+    <div class="row g-4 mb-5">@for (item of assignedHackathons(); track item.id) { <ng-container *ngTemplateOutlet="card; context: { item: item }"></ng-container> }</div>
+  }
+  @if (otherHackathons().length) {
+  <h2 class="h4 fw-bold mb-3">Tutti gli hackathon</h2>
+  <div class="row g-4">@for (item of otherHackathons(); track item.id) {
+    <div class="col-12 col-md-6 col-xl-4"><article class="card h-100 border-0 shadow-sm hackathon-card"><div class="card-body p-4 d-flex flex-column">
+      <div class="d-flex justify-content-between gap-2 mb-3"><span class="badge text-bg-light border">{{ item.status.replace('_', ' ') }}</span><span class="fw-bold text-primary">{{ item.prize | currency:'EUR' }}</span></div>
+      <h2 class="h5 fw-bold">{{ item.name }}</h2><p class="text-secondary flex-grow-1">{{ item.regulation }}</p>
+      <dl class="row small mb-4"><dt class="col-5 text-secondary">Luogo</dt><dd class="col-7 mb-2">{{ item.location }}</dd><dt class="col-5 text-secondary">Inizio</dt><dd class="col-7 mb-2">{{ item.start_date | date:'dd/MM/yyyy' }}</dd><dt class="col-5 text-secondary">Team max</dt><dd class="col-7 mb-0">{{ item.max_team_size }} membri</dd></dl>
+      <button class="btn btn-primary w-100" type="button" [disabled]="item.status !== 'ISCRIZIONI_APERTE'" (click)="register(item)">{{ item.status === 'ISCRIZIONI_APERTE' ? 'Iscrivi il mio team' : item.status.replace('_', ' ') }}</button>
+    </div></article></div>
+  }</div> }
+}
+<ng-template #card let-item="item"><div class="col-12 col-md-6 col-xl-4"><article class="card h-100 border-0 shadow-sm hackathon-card"><div class="card-body p-4 d-flex flex-column">
+  <div class="d-flex justify-content-between gap-2 mb-3"><span class="badge text-bg-light border">{{ item.status.replace('_', ' ') }}</span><span class="fw-bold text-primary">{{ item.prize | currency:'EUR' }}</span></div>
+  <h2 class="h5 fw-bold">{{ item.name }}</h2><p class="text-secondary flex-grow-1">{{ item.regulation }}</p>
+  <dl class="row small mb-4"><dt class="col-5 text-secondary">Luogo</dt><dd class="col-7 mb-2">{{ item.location }}</dd><dt class="col-5 text-secondary">Inizio</dt><dd class="col-7 mb-2">{{ item.start_date | date:'dd/MM/yyyy' }}</dd><dt class="col-5 text-secondary">Team max</dt><dd class="col-7 mb-0">{{ item.max_team_size }} membri</dd></dl>
+  @if (item.is_registered) { <div class="alert alert-success py-2 mb-0" role="status">Già iscritto</div> }
+  @else if (item.assigned_role) { <div class="alert alert-info py-2 mb-0">Assegnato come {{ item.assigned_role === 'JUDGE' ? 'giudice' : 'mentore' }}</div> }
+  @else { <button class="btn btn-primary w-100" type="button" [disabled]="item.status !== 'ISCRIZIONI_APERTE'" (click)="register(item)">{{ item.status === 'ISCRIZIONI_APERTE' ? 'Iscrivi il mio team' : item.status.replace('_', ' ') }}</button> }
+</div></article></div></ng-template>
