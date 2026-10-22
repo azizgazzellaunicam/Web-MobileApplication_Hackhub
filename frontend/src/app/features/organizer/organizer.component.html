@@ -1,0 +1,129 @@
+<div class="row justify-content-center">
+  <div class="col-12 col-xl-10">
+    <div class="mb-4">
+      <p class="text-uppercase small fw-bold text-primary mb-2">Area riservata</p>
+      <h1 class="display-6 fw-bold mb-2">Organizzazione</h1>
+      <p class="text-secondary mb-0">Crea un hackathon e assegna lo staff responsabile.</p>
+    </div>
+    @if (error(); as message) { <div class="alert alert-danger" role="alert">{{ message }}</div> }
+    @if (success(); as message) { <div class="alert alert-success" role="status">{{ message }}</div> }
+    @if (loading()) {
+      <div class="text-center py-5"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Caricamento...</span></div></div>
+    } @else {
+      <form class="card border-0 shadow-sm" (submit)="submit($event)">
+        <div class="card-body p-4 p-md-5">
+          <div class="row g-3">
+            <div class="col-12 col-md-8"><label class="form-label fw-semibold" for="name">Nome hackathon</label><input class="form-control" id="name" name="name" required maxlength="150"></div>
+            <div class="col-12 col-md-4"><label class="form-label fw-semibold" for="location">Luogo</label><input class="form-control" id="location" name="location" required maxlength="100"></div>
+            <div class="col-12"><label class="form-label fw-semibold" for="regulation">Regolamento</label><textarea class="form-control" id="regulation" name="regulation" required maxlength="2000" rows="3"></textarea></div>
+            <div class="col-12 col-md-4"><label class="form-label fw-semibold" for="registrationDeadline">Scadenza iscrizioni</label><input class="form-control" id="registrationDeadline" name="registrationDeadline" type="datetime-local" required></div>
+            <div class="col-12 col-md-4"><label class="form-label fw-semibold" for="startDate">Inizio</label><input class="form-control" id="startDate" name="startDate" type="datetime-local" required></div>
+            <div class="col-12 col-md-4"><label class="form-label fw-semibold" for="endDate">Fine</label><input class="form-control" id="endDate" name="endDate" type="datetime-local" required></div>
+            <div class="col-12 col-md-4"><label class="form-label fw-semibold" for="prize">Premio (€)</label><input class="form-control" id="prize" name="prize" type="number" min="0" step="0.01" required></div>
+            <div class="col-12 col-md-4"><label class="form-label fw-semibold" for="maxTeamSize">Dimensione massima team</label><input class="form-control" id="maxTeamSize" name="maxTeamSize" type="number" min="1" required></div>
+            <div class="col-12 col-md-4"><label class="form-label fw-semibold" for="judgeId">Giudice</label><select class="form-select" id="judgeId" name="judgeId" required><option value="">Seleziona</option>@for (member of judges(); track member.id) { <option [value]="member.id">{{ member.name }} ({{ member.email }})</option> }</select></div>
+            <div class="col-12 col-md-4"><label class="form-label fw-semibold" for="mentorId">Mentore</label><select class="form-select" id="mentorId" name="mentorId" required><option value="">Seleziona</option>@for (member of mentors(); track member.id) { <option [value]="member.id">{{ member.name }} ({{ member.email }})</option> }</select></div>
+          </div>
+          <button class="btn btn-primary mt-4" type="submit" [disabled]="saving() || !judges().length || !mentors().length">@if (saving()) { <span class="spinner-border spinner-border-sm me-2"></span> } Crea hackathon</button>
+          @if (!judges().length || !mentors().length) { <p class="text-danger small mt-3 mb-0">Non puoi creare l’evento finché non sono disponibili almeno un giudice e un mentore.</p> }
+        </div>
+      </form>
+      <section class="card border-0 shadow-sm mt-4">
+        <div class="card-body p-4">
+          <h2 class="h5 fw-bold">Gestione hackathon</h2>
+          <p class="small text-secondary">Seleziona “Modifica dettagli” per aggiornare, eliminare o cambiare stato. Lasciando “Automatico” resta attivo il calcolo dinamico.</p>
+          @for (item of hackathons(); track item.id) {
+            @if (editingHackathon() !== item.id) {
+              <div class="d-flex align-items-center justify-content-between gap-3 border-bottom py-3">
+                <div><strong>{{ item.name }}</strong><div class="small text-secondary">Stato attuale: {{ item.status.replace('_', ' ') }}</div></div>
+                <button class="btn btn-outline-secondary ms-auto" type="button" (click)="edit(item)">Modifica dettagli</button>
+              </div>
+            } @else {
+              <form class="border-bottom bg-light p-3" (submit)="update($event, item)">
+                <div class="row g-3">
+                  <div class="col-md-8"><label class="form-label" [for]="'edit-name-' + item.id">Nome</label><input class="form-control" [id]="'edit-name-' + item.id" name="name" [value]="item.name" required></div>
+                  <div class="col-md-4"><label class="form-label" [for]="'edit-location-' + item.id">Luogo</label><input class="form-control" [id]="'edit-location-' + item.id" name="location" [value]="item.location" required></div>
+                  <div class="col-12"><label class="form-label" [for]="'edit-regulation-' + item.id">Regolamento</label><textarea class="form-control" [id]="'edit-regulation-' + item.id" name="regulation" required>{{ item.regulation }}</textarea></div>
+                  <div class="col-md-4"><label class="form-label">Scadenza iscrizioni</label><input class="form-control" name="registrationDeadline" type="datetime-local" [value]="dateInput(item.registration_deadline)" required></div>
+                  <div class="col-md-4"><label class="form-label">Inizio</label><input class="form-control" name="startDate" type="datetime-local" [value]="dateInput(item.start_date)" required></div>
+                  <div class="col-md-4"><label class="form-label">Fine</label><input class="form-control" name="endDate" type="datetime-local" [value]="dateInput(item.end_date)" required></div>
+                  <div class="col-md-4"><label class="form-label">Premio</label><input class="form-control" name="prize" type="number" min="0" step="0.01" [value]="item.prize" required></div>
+                  <div class="col-md-4"><label class="form-label">Dimensione team</label><input class="form-control" name="maxTeamSize" type="number" min="1" [value]="item.max_team_size" required></div>
+                  <div class="col-md-4"><label class="form-label">Giudice</label><select class="form-select" name="judgeId"><option value="">Mantieni attuale</option>@for (member of judges(); track member.id) { <option [value]="member.id">{{ member.name }}</option> }</select></div>
+                  <div class="col-md-4"><label class="form-label">Mentore</label><select class="form-select" name="mentorId"><option value="">Mantieni attuale</option>@for (member of mentors(); track member.id) { <option [value]="member.id">{{ member.name }}</option> }</select></div>
+                </div>
+                <div class="mt-3 pt-3 border-top">
+                  <label class="form-label fw-semibold" [for]="'edit-status-' + item.id">Stato hackathon</label>
+                  <div class="d-flex flex-wrap gap-2">
+                    <select class="form-select w-auto" [id]="'edit-status-' + item.id" [value]="selectStatus(item)" (change)="draftStatus(item, $event)">
+                      <option value="">Automatico</option>
+                      @for (status of statuses; track status) { <option [value]="status">{{ status.replace('_', ' ') }}</option> }
+                    </select>
+                    <button class="btn btn-outline-primary" type="button" [disabled]="statusSaving() === item.id" (click)="saveStatus(item)">
+                      @if (statusSaving() === item.id) { <span class="spinner-border spinner-border-sm me-2"></span> }
+                      Salva stato
+                    </button>
+                  </div>
+                </div>
+                <div class="mt-3 d-flex flex-wrap gap-2">
+                  <button class="btn btn-primary" type="submit" [disabled]="saving()">Salva modifiche</button>
+                  <button class="btn btn-outline-danger" type="button" [disabled]="deletingHackathon() === item.id" (click)="delete(item)">
+                    @if (deletingHackathon() === item.id) { <span class="spinner-border spinner-border-sm me-2"></span> }
+                    Elimina hackathon
+                  </button>
+                  <button class="btn btn-secondary" type="button" (click)="cancelEdit()">Annulla</button>
+                </div>
+              </form>
+            }
+          }
+          @if (!hackathons().length) { <p class="text-secondary mb-0">Nessun hackathon disponibile.</p> }
+        </div>
+      </section>
+      <section class="card border-0 shadow-sm mt-4">
+        <div class="card-body p-4">
+          <h2 class="h5 fw-bold">Classifica e vincitore</h2>
+          <p class="small text-secondary">Consulta le valutazioni e proclama il team vincitore quando tutte le sottomissioni sono state valutate.</p>
+          @for (item of hackathons(); track item.id) {
+            <div class="border-bottom py-3">
+              <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+                <strong>{{ item.name }}</strong>
+                @if (item.winner_team_id) {
+                  <span class="badge text-bg-success">Vincitore già proclamato</span>
+                } @else {
+                  <button class="btn btn-outline-primary btn-sm" type="button" [disabled]="rankingLoading() === item.id" (click)="loadRanking(item)">
+                    @if (rankingLoading() === item.id) { <span class="spinner-border spinner-border-sm me-1"></span> }
+                    Mostra classifica
+                  </button>
+                }
+              </div>
+              @if (rankings()[item.id]; as ranking) {
+                @if (!ranking.entries.length) {
+                  <p class="small text-secondary mt-3 mb-0">Nessuna sottomissione valutata.</p>
+                } @else {
+                  <ol class="list-group list-group-numbered mt-3 mb-3">
+                    @for (entry of ranking.entries; track entry.teamId) {
+                      <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <span>{{ entry.teamName }}</span>
+                        <span class="badge text-bg-primary rounded-pill">{{ entry.averageScore | number:'1.1-2' }}/10</span>
+                      </li>
+                    }
+                  </ol>
+                  <div class="d-flex flex-wrap gap-2">
+                    <button class="btn btn-primary btn-sm" type="button" [disabled]="winnerSaving() === item.id" (click)="proclaimAutomatically(item)">
+                      Proclama miglior punteggio
+                    </button>
+                    @for (entry of ranking.entries; track entry.teamId) {
+                      <button class="btn btn-outline-secondary btn-sm" type="button" [disabled]="winnerSaving() === item.id" (click)="proclaim(item, entry.teamId, entry.teamName)">
+                        Proclama {{ entry.teamName }}
+                      </button>
+                    }
+                  </div>
+                }
+              }
+            </div>
+          }
+        </div>
+      </section>
+    }
+  </div>
+</div>
