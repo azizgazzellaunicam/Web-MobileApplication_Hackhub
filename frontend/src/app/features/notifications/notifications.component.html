@@ -1,0 +1,26 @@
+<div class="row justify-content-center">
+  <div class="col-12 col-xl-9">
+    <div class="mb-4">
+      <p class="text-uppercase small fw-bold text-primary mb-2">Centro notifiche</p>
+      <h1 class="display-6 fw-bold mb-2">Notifiche</h1>
+      <p class="text-secondary mb-0">Le notifiche sono conservate e ordinate dalla più recente.</p>
+    </div>
+    @if (error(); as message) { <div class="alert alert-danger">{{ message }}</div> }
+    @if (!items().length) {
+      <div class="card border-0 shadow-sm"><div class="card-body p-4 text-secondary">Non hai notifiche.</div></div>
+    } @else {
+      <div class="list-group shadow-sm">
+        @for (item of items(); track item.id) {
+          <button class="list-group-item list-group-item-action text-start p-4" [class.bg-primary-subtle]="!item.read_at" type="button" (click)="open(item)">
+            <div class="d-flex justify-content-between gap-3">
+              <strong>{{ item.title }}</strong>
+              <small class="text-secondary text-nowrap">{{ item.created_at | date:'dd/MM/yyyy HH:mm' }}</small>
+            </div>
+            <div class="mt-2">{{ item.message }}</div>
+            @if (!item.read_at) { <span class="badge text-bg-primary mt-2">Da leggere</span> }
+          </button>
+        }
+      </div>
+    }
+  </div>
+</div>

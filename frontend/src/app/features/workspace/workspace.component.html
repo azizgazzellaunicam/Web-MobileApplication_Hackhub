@@ -1,0 +1,46 @@
+<div class="mb-4"><p class="text-uppercase small fw-bold text-primary mb-2">Area partecipante</p><h1 class="display-6 fw-bold mb-2">Il mio spazio</h1><p class="text-secondary mb-0">Team, inviti e sottomissioni collegati al tuo account.</p></div>
+@if (error(); as message) { <div class="alert alert-danger">{{ message }}</div> }
+@if (notice(); as message) { <div class="alert alert-success">{{ message }}</div> }
+<div class="row g-4">
+  <div class="col-12 col-lg-5"><section class="card border-0 shadow-sm h-100"><div class="card-body p-4"><h2 class="h5 fw-bold">Il mio team</h2>
+    @if (teams().length) { @for (team of teams(); track team.id) { <div class="border rounded p-3 mb-3"><strong>{{ team.name }}</strong><div class="small text-secondary mt-1">Membri: {{ team.members }}</div><form class="input-group input-group-sm mt-3" (submit)="invite($event, team.id)"><input class="form-control" name="email" type="email" required placeholder="Email da invitare"><button class="btn btn-outline-primary" type="submit">Invita</button></form></div> } }
+    @else { <p class="text-secondary">Non appartieni ancora a un team.</p><form (submit)="createTeam($event)"><label class="form-label" for="team-name">Nome team</label><input class="form-control mb-3" id="team-name" name="name" required maxlength="100"><button class="btn btn-primary" type="submit">Crea team</button></form> }
+  </div></section></div>
+  <div class="col-12 col-lg-7"><section class="card border-0 shadow-sm h-100"><div class="card-body p-4"><h2 class="h5 fw-bold d-flex align-items-center gap-2">Inviti ricevuti @if (pendingInvitations()) { <span class="badge text-bg-danger">{{ pendingInvitations() }}</span> }</h2>
+    @if (pendingInvitations()) { <div class="alert alert-warning d-flex align-items-center gap-2" role="alert"><span aria-hidden="true">!</span><span>Hai un nuovo invito da esaminare.</span></div> }
+    @if (!invitations().length) { <p class="text-secondary mb-0">Nessun invito pendente.</p> } @else { @for (invitation of invitations(); track invitation.id) { <div class="d-flex justify-content-between align-items-center border-bottom py-3"><span>{{ invitation.team_name }} <small class="text-secondary">({{ invitation.status }})</small></span>@if (invitation.status === 'IN_ATTESA') { <span><button class="btn btn-sm btn-success me-2" (click)="decide(invitation, 'accept')">Accetta</button><button class="btn btn-sm btn-outline-danger" (click)="decide(invitation, 'reject')">Rifiuta</button></span> }</div> } }
+  </div></section></div>
+  <div class="col-12"><section class="card border-0 shadow-sm"><div class="card-body p-4"><h2 class="h5 fw-bold">I miei hackathon iscritti</h2>
+    @if (!hackathons().some((hackathon) => hackathon.is_registered)) { <p class="text-secondary mb-0">Nessuna iscrizione registrata.</p> }
+    @else { @for (hackathon of hackathons(); track hackathon.id) { @if (hackathon.is_registered) { <div class="border-bottom py-2"><strong>{{ hackathon.name }}</strong><span class="badge text-bg-light border ms-2">{{ hackathon.status.replace('_', ' ') }}</span></div> } } }
+  </div></section></div>
+  <div class="col-12"><section class="card border-0 shadow-sm"><div class="card-body p-4"><h2 class="h5 fw-bold">Le mie sottomissioni</h2>
+    @if (!submissions().length) { <p class="text-secondary mb-0">Nessuna sottomissione registrata.</p> }
+    @else { @for (submission of submissions(); track submission.id) {
+      <div class="border-bottom py-3"><strong>{{ submission.hackathon_name }}</strong>
+        <div class="small text-secondary mb-2">{{ submission.content }} · {{ submission.submitted_at | date:'dd/MM/yyyy HH:mm' }}</div>
+        @if (editingSubmission() === submission.id) {
+          <form (submit)="updateSubmission($event, submission)">
+            <textarea class="form-control mb-2" name="content" rows="2" required [value]="submission.content"></textarea>
+            <button class="btn btn-sm btn-primary me-2" type="submit">Salva</button>
+            <button class="btn btn-sm btn-outline-secondary" type="button" (click)="editingSubmission.set(null)">Annulla</button>
+          </form>
+        } @else {
+          <button class="btn btn-sm btn-outline-primary" type="button" (click)="editSubmission(submission)">Modifica sottomissione</button>
+        }
+      </div>
+    } }
+  </div></section></div>
+  <div class="col-12"><section class="card border-0 shadow-sm"><div class="card-body p-4"><h2 class="h5 fw-bold">Invia una sottomissione</h2><p class="small text-secondary">Inserisci un contenuto o un link prima di inviare la sottomissione.</p>
+    @for (hackathon of hackathons(); track hackathon.id) {
+      @if (hackathon.is_registered && (hackathon.status === 'IN_CORSO' || hackathon.status === 'VALUTAZIONE') && !submissions().some((submission) => submission.hackathon_id === hackathon.id)) {
+        <form class="border rounded p-3 mb-3" (submit)="submit($event, hackathon.id)">
+          <strong>{{ hackathon.name }}</strong>
+          <textarea class="form-control my-3" name="content" rows="2" required placeholder="Link o contenuto della sottomissione"></textarea>
+          <button class="btn btn-primary" type="submit">Invia sottomissione</button>
+        </form>
+      }
+    }
+    @if (!hackathons().some((hackathon) => hackathon.is_registered && (hackathon.status === 'IN_CORSO' || hackathon.status === 'VALUTAZIONE'))) { <p class="text-secondary mb-0">Nessun hackathon disponibile per una nuova sottomissione.</p> }
+  </div></section></div>
+</div>

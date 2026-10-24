@@ -1,0 +1,76 @@
+<div class="app-shell">
+  <header class="sticky-top border-bottom bg-white bg-opacity-90 shadow-sm">
+    <nav class="navbar navbar-expand-md navbar-light">
+      <div class="container d-flex flex-wrap align-items-center justify-content-between gap-3 py-2">
+        <a class="navbar-brand d-flex align-items-center gap-3 mb-0" routerLink="/">
+          <span class="brand-mark">H</span>
+          <span>
+            <span class="d-block fw-bold text-dark">HackHub</span>
+            <span class="d-block small text-secondary">Gestione hackathon</span>
+          </span>
+        </a>
+
+        @if (auth.isAuthenticated()) {
+          <button
+            class="navbar-toggler"
+            type="button"
+            data-bs-toggle="collapse"
+            data-bs-target="#main-navigation"
+            aria-controls="main-navigation"
+            aria-expanded="false"
+            aria-label="Apri o chiudi il menu"
+          >
+            <span class="navbar-toggler-icon"></span>
+          </button>
+          <div id="main-navigation" class="collapse navbar-collapse justify-content-end">
+            <div class="navbar-nav flex-row flex-wrap">
+              <a
+                class="nav-link rounded-pill px-3 fw-semibold"
+                routerLink="/"
+                routerLinkActive="active bg-primary-subtle text-primary"
+                [routerLinkActiveOptions]="{ exact: true }"
+              >
+                Hackathon
+              </a>
+              @if (auth.role() === 'ORGANIZER') {
+                <a class="nav-link rounded-pill px-3 fw-semibold" routerLink="/organizzatore" routerLinkActive="active bg-primary-subtle text-primary">
+                  Organizzazione
+                </a>
+              }
+              @if (auth.role() === 'JUDGE' || auth.role() === 'MENTOR') {
+                <a class="nav-link rounded-pill px-3 fw-semibold" routerLink="/staff" routerLinkActive="active bg-primary-subtle text-primary">
+                  Area staff
+                </a>
+              }
+              <a class="nav-link rounded-pill px-3 fw-semibold" routerLink="/spazio" routerLinkActive="active bg-primary-subtle text-primary">
+                Il mio spazio
+              </a>
+              <a
+                class="nav-link rounded-pill px-3 fw-semibold"
+                routerLink="/profilo"
+                routerLinkActive="active bg-primary-subtle text-primary"
+              >
+                Profilo
+              </a>
+              <a class="nav-link rounded-pill px-3 fw-semibold d-flex align-items-center gap-2" routerLink="/notifiche" routerLinkActive="active bg-primary-subtle text-primary">
+                Notifiche
+                @if (unreadNotifications() > 0) {
+                  <span class="badge rounded-pill text-bg-danger">{{ unreadNotifications() }}</span>
+                }
+              </a>
+            </div>
+            <span class="badge text-bg-light border d-none d-md-inline">{{ auth.role() }}</span>
+            <span class="small text-secondary d-none d-md-inline">{{ auth.email() }}</span>
+            <button class="btn btn-outline-secondary btn-sm rounded-pill px-3" type="button" (click)="logout()">
+              Esci
+            </button>
+          </div>
+        }
+      </div>
+    </nav>
+  </header>
+
+  <main class="container py-5">
+    <router-outlet />
+  </main>
+</div>
