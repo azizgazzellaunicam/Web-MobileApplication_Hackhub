@@ -6,9 +6,7 @@ function validateStartupConfiguration({ runtimeEnvironment, repository }) {
     const demoAccount = repository.prepare(`
       SELECT 1 FROM users
       WHERE email IN (
-        'mario@hackhub.it', 'admin@hackhub.it', 'giudice@hackhub.it', 'mentore@hackhub.it',
-        'mario.demo@demo.hackhub.local', 'admin.demo@demo.hackhub.local',
-        'giudice.demo@demo.hackhub.local', 'mentore.demo@demo.hackhub.local'
+        'mario@hackhub.it', 'admin@hackhub.it', 'giudice@hackhub.it', 'mentore@hackhub.it'
       )
       LIMIT 1
     `).get();
@@ -22,26 +20,38 @@ function validateStartupConfiguration({ runtimeEnvironment, repository }) {
 
 function seedDemoData({ runtimeEnvironment, repository, hashPassword }) {
   if (!['development', 'test'].includes(runtimeEnvironment)
-    || process.env.HACKHUB_SEED_DEMO !== 'true') return;
+    || process.env.HACKHUB_SEED_DEMO === 'false') return;
   const demoPasswords = {
-    user: process.env.HACKHUB_DEMO_USER_PASSWORD,
-    organizer: process.env.HACKHUB_DEMO_ORGANIZER_PASSWORD,
-    judge: process.env.HACKHUB_DEMO_JUDGE_PASSWORD,
-    mentor: process.env.HACKHUB_DEMO_MENTOR_PASSWORD,
+    user: process.env.HACKHUB_DEMO_USER_PASSWORD || 'password',
+    organizer: process.env.HACKHUB_DEMO_ORGANIZER_PASSWORD || 'password',
+    judge: process.env.HACKHUB_DEMO_JUDGE_PASSWORD || 'password',
+    mentor: process.env.HACKHUB_DEMO_MENTOR_PASSWORD || 'password',
   };
-  if (Object.values(demoPasswords).some((password) => !password || password.length < 16)) {
-    throw new Error('Ogni password demo deve essere fornita dall’ambiente e contenere almeno 16 caratteri.');
+  if (Object.values(demoPasswords).some((password) => !password || password.length < 8)) {
+    throw new Error('Ogni password demo deve contenere almeno 8 caratteri.');
   }
-  if (repository.prepare('SELECT COUNT(*) AS count FROM users').get().count) return;
+  const existingUsers = repository.prepare('SELECT COUNT(*) AS count FROM users').get().count;
+  if (existingUsers) {
+    const updateDemoUser = repository.prepare('UPDATE users SET email=?, password_hash=? WHERE email=?');
+    updateDemoUser.run('mario@hackhub.it', hashPassword(demoPasswords.user), 'mario.demo@demo.hackhub.local');
+    updateDemoUser.run('admin@hackhub.it', hashPassword(demoPasswords.organizer), 'admin.demo@demo.hackhub.local');
+    updateDemoUser.run('giudice@hackhub.it', hashPassword(demoPasswords.judge), 'giudice.demo@demo.hackhub.local');
+    updateDemoUser.run('mentore@hackhub.it', hashPassword(demoPasswords.mentor), 'mentore.demo@demo.hackhub.local');
+    updateDemoUser.run('mario@hackhub.it', hashPassword(demoPasswords.user), 'mario@hackhub.it');
+    updateDemoUser.run('admin@hackhub.it', hashPassword(demoPasswords.organizer), 'admin@hackhub.it');
+    updateDemoUser.run('giudice@hackhub.it', hashPassword(demoPasswords.judge), 'giudice@hackhub.it');
+    updateDemoUser.run('mentore@hackhub.it', hashPassword(demoPasswords.mentor), 'mentore@hackhub.it');
+    return;
+  }
   const add = repository.prepare('INSERT INTO users(name,email,password_hash,role) VALUES (?,?,?,?)');
-  add.run('Mario Demo', 'mario.demo@demo.hackhub.local', hashPassword(demoPasswords.user), 'USER');
-  add.run('Admin Demo', 'admin.demo@demo.hackhub.local', hashPassword(demoPasswords.organizer), 'ORGANIZER');
-  add.run('Giudice Demo', 'giudice.demo@demo.hackhub.local', hashPassword(demoPasswords.judge), 'JUDGE');
-  add.run('Mentore Demo', 'mentore.demo@demo.hackhub.local', hashPassword(demoPasswords.mentor), 'MENTOR');
-  const mario = repository.prepare('SELECT id FROM users WHERE email=?').get('mario.demo@demo.hackhub.local').id;
-  const admin = repository.prepare('SELECT id FROM users WHERE email=?').get('admin.demo@demo.hackhub.local').id;
-  const judge = repository.prepare('SELECT id FROM users WHERE email=?').get('giudice.demo@demo.hackhub.local').id;
-  const mentor = repository.prepare('SELECT id FROM users WHERE email=?').get('mentore.demo@demo.hackhub.local').id;
+  add.run('Mario Demo', 'mario@hackhub.it', hashPassword(demoPasswords.user), 'USER');
+  add.run('Admin Demo', 'admin@hackhub.it', hashPassword(demoPasswords.organizer), 'ORGANIZER');
+  add.run('Giudice Demo', 'giudice@hackhub.it', hashPassword(demoPasswords.judge), 'JUDGE');
+  add.run('Mentore Demo', 'mentore@hackhub.it', hashPassword(demoPasswords.mentor), 'MENTOR');
+  const mario = repository.prepare('SELECT id FROM users WHERE email=?').get('mario@hackhub.it').id;
+  const admin = repository.prepare('SELECT id FROM users WHERE email=?').get('admin@hackhub.it').id;
+  const judge = repository.prepare('SELECT id FROM users WHERE email=?').get('giudice@hackhub.it').id;
+  const mentor = repository.prepare('SELECT id FROM users WHERE email=?').get('mentore@hackhub.it').id;
   const team = repository.prepare('INSERT INTO teams(name) VALUES(?)').run('Team Alpha').lastInsertRowid;
   repository.prepare('INSERT INTO team_members(team_id,user_id) VALUES(?,?)').run(team, mario);
   const addHackathon = repository.prepare('INSERT INTO hackathons(name,regulation,registration_deadline,start_date,end_date,location,prize,max_team_size,organizer_id) VALUES(?,?,?,?,?,?,?,?,?)');

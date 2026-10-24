@@ -53,6 +53,18 @@ Il server viene avviato sulla porta `3000`.
 Il frontend Angular utilizza il proxy di sviluppo per inoltrare le richieste
 `/api` al backend.
 
+In sviluppo, l'avvio crea o aggiorna gli account demo automaticamente:
+
+| Ruolo | Email | Password |
+| --- | --- | --- |
+| Utente | `mario@hackhub.it` | `password` |
+| Organizzatore | `admin@hackhub.it` | `password` |
+| Giudice | `giudice@hackhub.it` | `password` |
+| Mentore | `mentore@hackhub.it` | `password` |
+
+Questi account sono disponibili solo in sviluppo e non vengono creati in
+produzione.
+
 ## API principali
 
 | Metodo | Endpoint | Descrizione |
@@ -86,8 +98,8 @@ Le principali variabili d'ambiente sono:
 
 - `PORT`: porta del server, predefinita a `3000`;
 - `HACKHUB_DB_PATH`: percorso del database SQLite;
-- `HACKHUB_SEED_DEMO`: abilita i dati demo in sviluppo o nei test;
-- `HACKHUB_DEMO_*_PASSWORD`: password degli account demo.
+- `HACKHUB_SEED_DEMO=false`: disabilita il seed demo in sviluppo;
+- `HACKHUB_DEMO_*_PASSWORD`: sostituisce le password demo predefinite.
 
 ## Test
 

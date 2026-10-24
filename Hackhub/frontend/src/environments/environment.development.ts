@@ -2,9 +2,9 @@ export const environment = {
   production: false,
   apiUrl: '/api',
   demoCredentials: [
-    { role: 'Utente', email: 'mario.demo@demo.hackhub.local', password: 'MarioDemoPassword2026!' },
-    { role: 'Organizzatore', email: 'admin.demo@demo.hackhub.local', password: 'AdminDemoPassword2026!' },
-    { role: 'Giudice', email: 'giudice.demo@demo.hackhub.local', password: 'GiudiceDemoPassword2026!' },
-    { role: 'Mentore', email: 'mentore.demo@demo.hackhub.local', password: 'MentoreDemoPassword2026!' },
+    { role: 'Utente', email: 'mario@hackhub.it', password: 'password' },
+    { role: 'Organizzatore', email: 'admin@hackhub.it', password: 'password' },
+    { role: 'Giudice', email: 'giudice@hackhub.it', password: 'password' },
+    { role: 'Mentore', email: 'mentore@hackhub.it', password: 'password' },
   ],
 };

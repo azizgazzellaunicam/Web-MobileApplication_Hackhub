@@ -56,18 +56,18 @@ test('rejects unauthenticated access with 401', async () => {
 });
 
 test('isolates team invitations from non-members', async () => {
-  const token = await login('mario.demo@demo.hackhub.local', 'test-user-demo-password-2026');
+  const token = await login('mario@hackhub.it', 'test-user-demo-password-2026');
   const { response, body } = await request('/api/teams/999/invitations', {
     method: 'POST',
     headers: { authorization: `Bearer ${token}` },
-    body: JSON.stringify({ email: 'giudice.demo@demo.hackhub.local' }),
+    body: JSON.stringify({ email: 'giudice@hackhub.it' }),
   });
   assert.equal(response.status, 403);
   assert.equal(body.status, 403);
 });
 
 test('returns own submissions without exposing another user data', async () => {
-  const token = await login('mario.demo@demo.hackhub.local', 'test-user-demo-password-2026');
+  const token = await login('mario@hackhub.it', 'test-user-demo-password-2026');
   const { response, body } = await request('/api/submissions/mine', {
     headers: { authorization: `Bearer ${token}` },
   });
@@ -76,7 +76,7 @@ test('returns own submissions without exposing another user data', async () => {
 });
 
 test('protects submission evaluation from non-judges', async () => {
-  const token = await login('mario.demo@demo.hackhub.local', 'test-user-demo-password-2026');
+  const token = await login('mario@hackhub.it', 'test-user-demo-password-2026');
   const { response, body } = await request('/api/submissions/1/evaluations', {
     method: 'POST',
     headers: { authorization: `Bearer ${token}` },
