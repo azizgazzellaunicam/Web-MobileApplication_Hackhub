@@ -38,7 +38,7 @@ const sessions = new Map();
 const repository = new SqliteRepository(database);
 validateStartupConfiguration({ runtimeEnvironment, repository });
 seedDemoData({ runtimeEnvironment, repository, hashPassword });
-cleanDemoData(repository);
+cleanDemoData({ runtimeEnvironment, repository });
 
 const userRepository = new UserRepository(database);
 const hackathonRepository = new HackathonRepository(database);

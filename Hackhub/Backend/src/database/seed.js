@@ -64,7 +64,9 @@ function seedDemoData({ runtimeEnvironment, repository, hashPassword }) {
   repository.prepare('INSERT INTO submissions(hackathon_id,team_id,content,submitted_at) VALUES(?,?,?,CURRENT_TIMESTAMP)').run(running, team, 'https://repo.demo/team-alpha');
 }
 
-function cleanDemoData(repository) {
+function cleanDemoData({ runtimeEnvironment, repository }) {
+  if (!['development', 'test'].includes(runtimeEnvironment)) return;
+
   const demoEvaluation = repository.prepare("SELECT id FROM hackathons WHERE name='HackHub Demo - Valutazione'").get();
   const demoTeam = repository.prepare("SELECT id FROM teams WHERE name='Team Alpha'").get();
   if (demoEvaluation && demoTeam) {
