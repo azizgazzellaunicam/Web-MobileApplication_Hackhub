@@ -2,6 +2,13 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { Component, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { Auth } from '../../../core/auth/auth.service';
+import { environment } from '../../../../environments/environment';
+
+interface DemoCredential {
+  role: string;
+  email: string;
+  password: string;
+}
 
 @Component({
   standalone: true,
@@ -15,6 +22,7 @@ export class Login {
   public readonly isRegistering = signal(false);
   public readonly loading = signal(false);
   public readonly error = signal<string | null>(null);
+  public readonly demoCredentials: DemoCredential[] = environment.demoCredentials;
   public toggleMode(): void {
     this.isRegistering.update((registering) => !registering);
     this.error.set(null);
