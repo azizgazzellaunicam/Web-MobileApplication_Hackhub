@@ -36,6 +36,13 @@ export class Workspace implements OnInit {
       error: (error: unknown) => this.error.set(this.message(error)),
     });
   }
+  public leaveTeam(team: Team): void {
+    if (!team.can_leave || !window.confirm(`Vuoi uscire dal team ${team.name}?`)) return;
+    this.service.leaveTeam(team.id).subscribe({
+      next: (response) => { this.notice.set(response.message); this.refresh(); },
+      error: (error: unknown) => this.error.set(this.message(error)),
+    });
+  }
   public invite(event: Event, teamId: number): void {
     event.preventDefault();
     const form = event.currentTarget;
