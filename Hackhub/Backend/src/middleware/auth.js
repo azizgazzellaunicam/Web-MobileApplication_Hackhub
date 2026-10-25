@@ -4,7 +4,7 @@ function createAuthMiddleware(sessions) {
   function tokenFromRequest(req) {
     const authorizationToken = req.headers.authorization?.replace(/^Bearer\s+/i, '');
     if (authorizationToken) return authorizationToken;
-    const   Header = req.headers.cookie || '';
+    const cookieHeader = req.headers.cookie || '';
     return cookieHeader.split(';').map((part) => part.trim())
       .find((part) => part.startsWith('hackhub_session='))
       ?.slice('hackhub_session='.length);
