@@ -24,7 +24,7 @@
       <div class="d-flex justify-content-between gap-2 mb-3"><span class="badge text-bg-light border">{{ item.status.replace('_', ' ') }}</span><span class="fw-bold text-primary">{{ item.prize | currency:'EUR' }}</span></div>
       <h2 class="h5 fw-bold">{{ item.name }}</h2><p class="text-secondary flex-grow-1">{{ item.regulation }}</p>
       <dl class="row small mb-4"><dt class="col-5 text-secondary">Luogo</dt><dd class="col-7 mb-2">{{ item.location }}</dd><dt class="col-5 text-secondary">Inizio</dt><dd class="col-7 mb-2">{{ item.start_date | date:'dd/MM/yyyy' }}</dd><dt class="col-5 text-secondary">Team max</dt><dd class="col-7 mb-0">{{ item.max_team_size }} membri</dd></dl>
-      <button class="btn btn-primary w-100" type="button" [disabled]="item.status !== 'ISCRIZIONI_APERTE'" (click)="register(item)">{{ item.status === 'ISCRIZIONI_APERTE' ? 'Iscrivi il mio team' : item.status.replace('_', ' ') }}</button>
+      <button class="btn btn-primary w-100" type="button" [disabled]="item.status !== 'ISCRIZIONI_APERTE' || registering() === item.id" (click)="register(item)">{{ registering() === item.id ? 'Iscrizione in corso…' : item.status === 'ISCRIZIONI_APERTE' ? 'Iscrivi il mio team' : item.status.replace('_', ' ') }}</button>
     </div></article></div>
   }</div> }
 }
@@ -34,5 +34,5 @@
   <dl class="row small mb-4"><dt class="col-5 text-secondary">Luogo</dt><dd class="col-7 mb-2">{{ item.location }}</dd><dt class="col-5 text-secondary">Inizio</dt><dd class="col-7 mb-2">{{ item.start_date | date:'dd/MM/yyyy' }}</dd><dt class="col-5 text-secondary">Team max</dt><dd class="col-7 mb-0">{{ item.max_team_size }} membri</dd></dl>
   @if (item.is_registered) { <div class="alert alert-success py-2 mb-0" role="status">Già iscritto</div> }
   @else if (item.assigned_role) { <div class="alert alert-info py-2 mb-0">Assegnato come {{ item.assigned_role === 'JUDGE' ? 'giudice' : 'mentore' }}</div> }
-  @else { <button class="btn btn-primary w-100" type="button" [disabled]="item.status !== 'ISCRIZIONI_APERTE'" (click)="register(item)">{{ item.status === 'ISCRIZIONI_APERTE' ? 'Iscrivi il mio team' : item.status.replace('_', ' ') }}</button> }
+  @else { <button class="btn btn-primary w-100" type="button" [disabled]="item.status !== 'ISCRIZIONI_APERTE' || registering() === item.id" (click)="register(item)">{{ registering() === item.id ? 'Iscrizione in corso…' : item.status === 'ISCRIZIONI_APERTE' ? 'Iscrivi il mio team' : item.status.replace('_', ' ') }}</button> }
 </div></article></div></ng-template>
