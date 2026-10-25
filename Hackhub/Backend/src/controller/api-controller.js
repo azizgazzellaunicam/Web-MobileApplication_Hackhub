@@ -10,14 +10,28 @@ function registerApiRoutes({
   competitionService,
   hackathon,
 }) {
+  const sessionCookie = (res, token, maxAge) => {
+    const attributes = [`hackhub_session=${token}`, `Max-Age=${maxAge}`, 'Path=/', 'HttpOnly', 'SameSite=Lax'];
+    if (process.env.NODE_ENV === 'production') attributes.push('Secure');
+    res.setHeader('Set-Cookie', attributes.join('; '));
+  };
+  const clearSessionCookie = (res) => {
+    res.setHeader('Set-Cookie', 'hackhub_session=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax');
+  };
+  const authResponse = (res, response) => {
+    sessionCookie(res, response.token, 8 * 60 * 60);
+    res.json(response);
+  };
+
   app.post('/api/auth/register', (req, res, next) => {
-    try { res.status(200).json(authService.register(req.body)); } catch (error) { next(error); }
+    try { authResponse(res, authService.register(req.body)); } catch (error) { next(error); }
   });
   app.post('/api/auth/login', (req, res, next) => {
-    try { res.status(200).json(authService.login(req.body)); } catch (error) { next(error); }
+    try { authResponse(res, authService.login(req.body)); } catch (error) { next(error); }
   });
   app.post('/api/auth/logout', auth, (req, res) => {
     authService.logout(req.token);
+    clearSessionCookie(res);
     res.sendStatus(204);
   });
   app.get('/api/auth/profile', auth, (req, res) => res.json(req.user));

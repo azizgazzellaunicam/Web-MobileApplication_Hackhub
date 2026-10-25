@@ -5,6 +5,9 @@ function registerTeamRoutes({ app, auth, role, teamService }) {
   app.post('/api/teams', auth, (req, res, next) => {
     try { res.status(201).json(teamService.create(req.user.id, req.user.name, req.body?.name)); } catch (error) { next(error); }
   });
+  app.delete('/api/teams/:id/membership', auth, (req, res, next) => {
+    try { res.json(teamService.leave(Number(req.params.id), req.user.id)); } catch (error) { next(error); }
+  });
   app.post('/api/teams/:id/invitations', auth, (req, res, next) => {
     try {
       const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';

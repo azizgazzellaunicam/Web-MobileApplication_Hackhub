@@ -7,6 +7,7 @@ const { HackathonRepository } = require('./repository/hackathon-repository');
 const { NotificationRepository } = require('./repository/notification-repository');
 const { TeamRepository } = require('./repository/team-repository');
 const { CompetitionRepository } = require('./repository/competition-repository');
+const { SessionRepository } = require('./repository/session-repository');
 const { SupportRepository } = require('./repository/support-repository');
 const { HackathonService } = require('./service/hackathon-service');
 const { AuthService } = require('./service/auth-service');
@@ -30,11 +31,10 @@ const { createAuthMiddleware } = require('./middleware/auth');
 const { errorHandler, notFoundHandler } = require('./middleware/error-handler');
 
 const port = Number(process.env.PORT || 3000);
-const runtimeEnvironment = process.env.NODE_ENV || 'unknown';
+const runtimeEnvironment = process.env.NODE_ENV || 'development';
 const database = createDatabase();
 initializeSchema(database);
 migrateSchema(database);
-const sessions = new Map();
 const repository = new SqliteRepository(database);
 validateStartupConfiguration({ runtimeEnvironment, repository });
 seedDemoData({ runtimeEnvironment, repository, hashPassword });
@@ -45,9 +45,10 @@ const hackathonRepository = new HackathonRepository(database);
 const notificationRepository = new NotificationRepository(database);
 const teamRepository = new TeamRepository(database);
 const competitionRepository = new CompetitionRepository(database);
+const sessionRepository = new SessionRepository(database);
 const supportRepository = new SupportRepository(database);
 const notificationService = new NotificationService(notificationRepository);
-const authService = new AuthService(userRepository, sessions, hashPassword, verifyPassword);
+const authService = new AuthService(userRepository, sessionRepository, hashPassword, verifyPassword);
 const hackathonService = new HackathonService(hackathonRepository, statusOf);
 const teamService = new TeamService(teamRepository, notificationService);
 const paymentAdapter = new FakePaymentAdapter();
@@ -61,7 +62,7 @@ const competitionService = new CompetitionService(
   paymentAdapter,
   notificationService,
 );
-const { auth, authOptional, role } = createAuthMiddleware(sessions);
+const { auth, authOptional, role } = createAuthMiddleware(sessionRepository);
 
 function fail(status, message) {
   throw httpError(status, message);
@@ -119,4 +120,4 @@ registerApiRoutes({
 app.use(errorHandler);
 app.use(notFoundHandler);
 
-module.exports = { app, database, sessions, port };
+module.exports = { app, database, sessionRepository, port };
