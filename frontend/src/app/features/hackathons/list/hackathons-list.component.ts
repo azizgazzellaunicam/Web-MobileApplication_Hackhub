@@ -16,6 +16,7 @@ export class HackathonsList implements OnInit {
   public readonly loading = signal(true);
   public readonly error = signal<string | null>(null);
   public readonly notice = signal<string | null>(null);
+  public readonly registering = signal<number | null>(null);
 
   public ngOnInit(): void {
     this.service.list().subscribe({
@@ -24,11 +25,21 @@ export class HackathonsList implements OnInit {
     });
   }
   public register(item: Hackathon): void {
-    if (item.is_registered || item.status !== 'ISCRIZIONI_APERTE') return;
+    if (item.is_registered || item.status !== 'ISCRIZIONI_APERTE' || this.registering() !== null) return;
     this.notice.set(null);
+    this.error.set(null);
+    this.registering.set(item.id);
     this.service.register(item.id).subscribe({
-      next: (response) => this.notice.set(response.message),
-      error: (error: unknown) => this.error.set(this.message(error)),
+      next: (response) => {
+        this.hackathons.update((items) => items.map((current) =>
+          current.id === item.id ? { ...current, is_registered: true } : current));
+        this.notice.set(response.message);
+        this.registering.set(null);
+      },
+      error: (error: unknown) => {
+        this.error.set(this.message(error));
+        this.registering.set(null);
+      },
     });
   }
   public registeredHackathons(): Hackathon[] {

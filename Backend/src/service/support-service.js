@@ -29,6 +29,13 @@ class SupportService {
     return request;
   }
   open(userId) { return this.repository.openForMentor(userId); }
+  mine(userId) { return this.repository.forUser(userId); }
+  teams(userId, id) {
+    const hackathon = this.repository.hackathon(id);
+    if (!hackathon) throw httpError(HttpStatus.NOT_FOUND, 'Hackathon non trovato.');
+    if (hackathon.organizer_id !== userId && !this.repository.mentor(id, userId)) throw httpError(HttpStatus.FORBIDDEN, 'Non puoi consultare i team di questo hackathon.');
+    return this.repository.registeredTeams(id);
+  }
   listForHackathon(userId, id) {
     const hackathon = this.repository.hackathon(id);
     if (!hackathon) throw httpError(HttpStatus.NOT_FOUND, 'Hackathon non trovato.');

@@ -77,6 +77,13 @@ function migrateSchema(database) {
   } catch (error) {
     if (!String(error.message).includes('duplicate column name')) throw error;
   }
+  const duplicateMember = database.prepare(`
+    SELECT user_id FROM team_members GROUP BY user_id HAVING COUNT(*) > 1 LIMIT 1
+  `).get();
+  if (duplicateMember) {
+    throw new Error(`Impossibile applicare il vincolo di team unico: l’utente ${duplicateMember.user_id} appartiene a più team.`);
+  }
+  database.exec('CREATE UNIQUE INDEX IF NOT EXISTS team_members_one_team_per_user ON team_members(user_id)');
 }
 
 module.exports = { initializeSchema, migrateSchema };

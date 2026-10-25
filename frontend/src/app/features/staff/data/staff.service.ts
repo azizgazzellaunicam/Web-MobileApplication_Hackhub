@@ -35,6 +35,12 @@ export class StaffService {
   public support(): Observable<SupportRequest[]> {
     return this.http.get<SupportRequest[]>(`${this.url}/support-requests/open`);
   }
+  public teams(hackathonId: number): Observable<{ id: number; name: string }[]> {
+    return this.http.get<{ id: number; name: string }[]>(`${this.url}/hackathons/${hackathonId}/teams`);
+  }
+  public report(hackathonId: number, teamId: number, description: string): Observable<SupportRequest> {
+    return this.http.post<SupportRequest>(`${this.url}/support-requests/report`, { hackathonId, teamId, description });
+  }
   public call(requestId: number, scheduledAt: string): Observable<{ link: string }> {
     return this.http.post<{ link: string }>(`${this.url}/support-requests/${requestId}/calls`, { scheduledAt });
   }

@@ -17,11 +17,12 @@ export class Staff implements OnInit {
   public readonly requests = signal<SupportRequest[]>([]);
   public readonly error = signal<string | null>(null);
   public readonly notice = signal<string | null>(null);
+  public readonly teams = signal<{ id: number; name: string }[]>([]);
   public readonly selectedHackathon = signal<number | null>(null);
 
   public ngOnInit(): void {
     if (this.auth.role() === 'JUDGE') {
-      this.service.evaluation().subscribe({
+      this.service.assigned().subscribe({
         next: (items) => { this.hackathons.set(items); if (items[0]) this.select(items[0].id); },
         error: (error: unknown) => this.error.set(this.message(error)),
       });
@@ -35,10 +36,27 @@ export class Staff implements OnInit {
   }
   public select(id: number): void {
     this.selectedHackathon.set(id);
+    if (this.auth.role() === 'MENTOR') {
+      this.teams.set([]);
+      this.service.teams(id).subscribe({
+        next: (items) => this.teams.set(items),
+        error: (error: unknown) => this.error.set(this.message(error)),
+      });
+      return;
+    }
+    const hackathon = this.hackathons().find((item) => item.id === id);
+    if (this.auth.role() === 'JUDGE' && hackathon?.status !== 'VALUTAZIONE') {
+      this.submissions.set([]);
+      return;
+    }
     this.service.submissions(id).subscribe({
       next: (items) => this.submissions.set(items),
       error: (error: unknown) => this.error.set(this.message(error)),
     });
+  }
+  public canEvaluateSelectedHackathon(): boolean {
+    return this.hackathons().some((item) =>
+      item.id === this.selectedHackathon() && item.status === 'VALUTAZIONE');
   }
   public evaluate(event: Event, submission: StaffSubmission): void {
     event.preventDefault();
@@ -49,6 +67,20 @@ export class Staff implements OnInit {
     const comment = String(values.get('comment') ?? '').trim();
     this.service.evaluate(submission.id, score, comment).subscribe({
       next: (response) => { this.notice.set(response.message); form.reset(); },
+      error: (error: unknown) => this.error.set(this.message(error)),
+    });
+  }
+  public report(event: Event): void {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const hackathonId = this.selectedHackathon();
+    if (!(form instanceof HTMLFormElement) || hackathonId === null) return;
+    const values = new FormData(form);
+    const teamId = Number(values.get('teamId'));
+    const description = String(values.get('description') ?? '').trim();
+    if (!teamId || !description) return;
+    this.service.report(hackathonId, teamId, description).subscribe({
+      next: () => { this.error.set(null); this.notice.set('Segnalazione inviata.'); form.reset(); this.loadSupport(); },
       error: (error: unknown) => this.error.set(this.message(error)),
     });
   }

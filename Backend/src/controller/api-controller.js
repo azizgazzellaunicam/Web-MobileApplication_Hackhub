@@ -20,7 +20,8 @@ function registerApiRoutes({
   };
   const authResponse = (res, response) => {
     sessionCookie(res, response.token, 8 * 60 * 60);
-    res.json(response);
+    const { token, ...publicResponse } = response;
+    res.json(publicResponse);
   };
 
   app.post('/api/auth/register', (req, res, next) => {
