@@ -1,4 +1,5 @@
 const assert = require('node:assert/strict');
+const { createHash } = require('node:crypto');
 const test = require('node:test');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -53,6 +54,34 @@ test('rejects unauthenticated access with 401', async () => {
   const { response, body } = await request('/api/teams');
   assert.equal(response.status, 401);
   assert.equal(body.status, 401);
+});
+
+test('logs in and invalidates the session on logout', async () => {
+  const token = await login('mario@hackhub.it', 'test-user-demo-password-2026');
+  const loggedIn = await request('/api/auth/profile', {
+    headers: { authorization: `Bearer ${token}` },
+  });
+  assert.equal(loggedIn.response.status, 200);
+
+  const logout = await request('/api/auth/logout', {
+    method: 'POST',
+    headers: { authorization: `Bearer ${token}` },
+  });
+  assert.equal(logout.response.status, 204);
+  const loggedOut = await request('/api/auth/profile', {
+    headers: { authorization: `Bearer ${token}` },
+  });
+  assert.equal(loggedOut.response.status, 401);
+});
+
+test('rejects an expired session', async () => {
+  const token = await login('mario@hackhub.it', 'test-user-demo-password-2026');
+  const tokenHash = createHash('sha256').update(token).digest('hex');
+  database.prepare('UPDATE sessions SET expires_at=? WHERE token_hash=?').run(Date.now() - 1, tokenHash);
+  const { response } = await request('/api/auth/profile', {
+    headers: { authorization: `Bearer ${token}` },
+  });
+  assert.equal(response.status, 401);
 });
 
 test('isolates team invitations from non-members', async () => {
