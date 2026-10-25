@@ -10,7 +10,7 @@ Il progetto è organizzato nella cartella `Hackhub/`, che contiene le due
 applicazioni principali:
 
 - `Hackhub/Backend/`: backend REST sviluppato con Node.js, Express e SQLite;
-- `Hackhub/frontend/`: frontend sviluppato con Angular.
+- `Hackhub/frontend/`: frontend sviluppato con Angular e Bootstrap.
 
 La documentazione tecnica è mantenuta separatamente nei rispettivi moduli:
 
