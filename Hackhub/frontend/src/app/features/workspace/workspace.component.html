@@ -14,6 +14,18 @@
     @if (!hackathons().some((hackathon) => hackathon.is_registered)) { <p class="text-secondary mb-0">Nessuna iscrizione registrata.</p> }
     @else { @for (hackathon of hackathons(); track hackathon.id) { @if (hackathon.is_registered) { <div class="border-bottom py-2"><strong>{{ hackathon.name }}</strong><span class="badge text-bg-light border ms-2">{{ hackathon.status.replace('_', ' ') }}</span></div> } } }
   </div></section></div>
+  <div class="col-12"><section class="card border-0 shadow-sm"><div class="card-body p-4"><h2 class="h5 fw-bold">Supporto dei mentori</h2>
+    @if (!teams().length) { <p class="text-secondary">Devi appartenere a un team per richiedere supporto.</p> }
+    @else if (!hackathons().some((hackathon) => hackathon.is_registered && hackathon.status === 'IN_CORSO')) { <p class="text-secondary">Il supporto è disponibile solo durante un hackathon in corso a cui il tuo team è iscritto.</p> }
+    @else { <form class="border rounded p-3 mb-3" (submit)="requestSupport($event)">
+      <select class="form-select mb-2" name="hackathonId" required aria-label="Hackathon"><option value="" selected disabled>Seleziona hackathon</option>@for (hackathon of hackathons(); track hackathon.id) { @if (hackathon.is_registered && hackathon.status === 'IN_CORSO') { <option [value]="hackathon.id">{{ hackathon.name }}</option> } }</select>
+      <input class="form-control mb-2" name="topic" required maxlength="100" placeholder="Argomento">
+      <textarea class="form-control mb-2" name="description" rows="3" required placeholder="Descrivi il problema"></textarea>
+      <select class="form-select mb-3" name="priority" aria-label="Priorità"><option value="BASSA">Bassa</option><option value="MEDIA" selected>Media</option><option value="ALTA">Alta</option></select>
+      <button class="btn btn-primary" type="submit">Invia richiesta</button>
+    </form> }
+    @for (request of supportRequests(); track request.id) { <div class="border-bottom py-2"><strong>{{ request.hackathon_name }} · {{ request.topic }}</strong><span class="badge ms-2" [class.text-bg-success]="!request.open" [class.text-bg-warning]="request.open">{{ request.open ? 'Aperta' : 'Chiusa' }}</span><div class="small text-secondary">{{ request.description }}</div>@if (request.call_link) { <div class="small">Call: <a [href]="request.call_link" target="_blank" rel="noopener">{{ request.call_link }}</a>@if (request.call_scheduled_at) { · {{ request.call_scheduled_at | date:'dd/MM/yyyy HH:mm' }} }</div> }</div> }
+  </div></section></div>
   <div class="col-12"><section class="card border-0 shadow-sm"><div class="card-body p-4"><h2 class="h5 fw-bold">Le mie sottomissioni</h2>
     @if (!submissions().length) { <p class="text-secondary mb-0">Nessuna sottomissione registrata.</p> }
     @else { @for (submission of submissions(); track submission.id) {

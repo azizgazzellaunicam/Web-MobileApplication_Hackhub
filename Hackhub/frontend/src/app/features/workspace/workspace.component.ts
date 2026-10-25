@@ -1,7 +1,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
-import { Invitation, Submission, Team, WorkspaceHackathon, WorkspaceService } from './workspace.service';
+import { Invitation, MySupportRequest, Submission, Team, WorkspaceHackathon, WorkspaceService } from './workspace.service';
 
 @Component({ standalone: true, imports: [DatePipe], selector: 'app-workspace', templateUrl: './workspace.component.html' })
 export class Workspace implements OnInit {
@@ -11,6 +11,7 @@ export class Workspace implements OnInit {
   public readonly submissions = signal<Submission[]>([]);
   public readonly hackathons = signal<WorkspaceHackathon[]>([]);
   public readonly loading = signal(true);
+  public readonly supportRequests = signal<MySupportRequest[]>([]);
   public readonly error = signal<string | null>(null);
   public readonly notice = signal<string | null>(null);
   public readonly editingSubmission = signal<number | null>(null);
@@ -77,15 +78,47 @@ export class Workspace implements OnInit {
       error: (error: unknown) => this.error.set(this.message(error)),
     });
   }
+  public requestSupport(event: Event): void {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const team = this.teams()[0];
+    if (!(form instanceof HTMLFormElement) || !team) return;
+    const values = new FormData(form);
+    const body = {
+      hackathonId: Number(values.get('hackathonId')),
+      teamId: team.id,
+      topic: String(values.get('topic') ?? '').trim(),
+      description: String(values.get('description') ?? '').trim(),
+      priority: String(values.get('priority') ?? 'MEDIA'),
+    };
+    if (!body.hackathonId || !body.topic || !body.description) return;
+    this.service.createSupportRequest(body).subscribe({
+      next: () => { this.error.set(null); this.notice.set('Richiesta di supporto inviata.'); form.reset(); this.refresh(); },
+      error: (error: unknown) => this.error.set(this.message(error)),
+    });
+  }
   private refresh(): void {
+    this.service.supportRequests().subscribe({
+      next: (items) => this.supportRequests.set(items),
+      error: (error: unknown) => this.error.set(this.message(error)),
+    });
     this.loading.set(true);
     this.service.teams().subscribe({
       next: (teams) => { this.teams.set(teams); this.loading.set(false); },
       error: (error: unknown) => { this.error.set(this.message(error)); this.loading.set(false); },
     });
-    this.service.invitations().subscribe({ next: (items) => this.invitations.set(items), error: () => undefined });
-    this.service.submissions().subscribe({     next: (items) => this.submissions.set(items), error: () => undefined });
-    this.service.hackathons().subscribe({ next: (items) => this.hackathons.set(items), error: () => undefined });
+    this.service.invitations().subscribe({
+      next: (items) => this.invitations.set(items),
+      error: (error: unknown) => this.error.set(this.message(error)),
+    });
+    this.service.submissions().subscribe({
+      next: (items) => this.submissions.set(items),
+      error: (error: unknown) => this.error.set(this.message(error)),
+    });
+    this.service.hackathons().subscribe({
+      next: (items) => this.hackathons.set(items),
+      error: (error: unknown) => this.error.set(this.message(error)),
+    });
   }
   private message(error: unknown): string {
     return error instanceof HttpErrorResponse && typeof error.error?.error === 'string'

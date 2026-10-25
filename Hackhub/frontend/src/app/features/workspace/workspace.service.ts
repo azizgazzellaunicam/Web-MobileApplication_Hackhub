@@ -7,6 +7,7 @@ export interface Team { id: number; name: string; members: string; can_leave: bo
 export interface Invitation { id: number; team_name: string; invited_email: string; status: string; }
 export interface Submission { id: number; hackathon_id: number; content: string; hackathon_name: string; team_name: string; submitted_at: string; }
 export interface WorkspaceHackathon { id: number; name: string; status: string; is_registered: boolean; is_winner: boolean; }
+export interface MySupportRequest { id: number; hackathon_name: string; team_name: string; topic: string; description: string; priority: string; open: number; call_link: string | null; call_scheduled_at: string | null; }
 export interface WinningHackathon { id: number; name: string; winner_team_id: number; prize: number; }
 
 @Injectable({ providedIn: 'root' })
@@ -27,6 +28,10 @@ export class WorkspaceService {
   }
   public submissions(): Observable<Submission[]> { return this.http.get<Submission[]>(`${this.url}/submissions/mine`); }
   public hackathons(): Observable<WorkspaceHackathon[]> { return this.http.get<WorkspaceHackathon[]>(`${this.url}/hackathons`); }
+  public supportRequests(): Observable<MySupportRequest[]> { return this.http.get<MySupportRequest[]>(`${this.url}/support-requests/mine`); }
+  public createSupportRequest(body: { hackathonId: number; teamId: number; topic: string; description: string; priority: string }): Observable<MySupportRequest> {
+    return this.http.post<MySupportRequest>(`${this.url}/support-requests`, body);
+  }
   public wins(): Observable<WinningHackathon[]> { return this.http.get<WinningHackathon[]>(`${this.url}/profile/wins`); }
   public submit(hackathonId: number, content: string): Observable<Submission> {
     return this.http.post<Submission>(`${this.url}/hackathons/${hackathonId}/submissions`, { content });
