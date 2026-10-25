@@ -8,7 +8,7 @@ export interface Hackathon {
   location: string;
   prize: number;
   max_team_size: number;
-  status: 'ISCRIZIONI_APERTE' | 'IN_CORSO' | 'VALUTAZIONE' | 'CONCLUSO';
+  status: 'ISCRIZIONI_APERTE' | 'ISCRIZIONI_CHIUSE' | 'IN_CORSO' | 'VALUTAZIONE' | 'CONCLUSO';
   status_override: HackathonStatus | null;
   is_registered: boolean;
   assigned_role: 'JUDGE' | 'MENTOR' | null;
