@@ -7,14 +7,11 @@ import { Auth } from './auth.service';
 export const authInterceptor: HttpInterceptorFn = (request, next) => {
   const auth = inject(Auth);
   const router = inject(Router);
-  const token = auth.token;
-  const authenticatedRequest = token
-    ? request.clone({ setHeaders: { Authorization: `Bearer ${token}` } })
-    : request;
+  const authenticatedRequest = request.clone({ withCredentials: true });
 
   return next(authenticatedRequest).pipe(
     catchError((error: unknown) => {
-      if (error instanceof HttpErrorResponse && error.status === 401 && token) {
+      if (error instanceof HttpErrorResponse && error.status === 401 && auth.isAuthenticated()) {
         auth.clearSession();
         void router.navigateByUrl('/login');
       }

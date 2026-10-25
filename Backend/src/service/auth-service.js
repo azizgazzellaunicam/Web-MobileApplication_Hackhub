@@ -2,9 +2,9 @@ const { randomBytes } = require('node:crypto');
 const { HttpStatus, httpError } = require('../http/http-errors');
 
 class AuthService {
-  constructor(userRepository, sessions, hashPassword, verifyPassword) {
+  constructor(userRepository, sessionRepository, hashPassword, verifyPassword) {
     this.userRepository = userRepository;
-    this.sessions = sessions;
+    this.sessionRepository = sessionRepository;
     this.hashPassword = hashPassword;
     this.verifyPassword = verifyPassword;
   }
@@ -31,7 +31,7 @@ class AuthService {
   }
 
   logout(token) {
-    this.sessions.delete(token);
+    this.sessionRepository.delete(token);
   }
 
   updateProfile(userId, input) {
@@ -50,7 +50,7 @@ class AuthService {
     const user = this.userRepository.findById(userId);
     if (!user) throw httpError(HttpStatus.INTERNAL_SERVER_ERROR, 'Utente non trovato.');
     const token = randomBytes(32).toString('hex');
-    this.sessions.set(token, { user, expiresAt: Date.now() + 8 * 60 * 60 * 1000 });
+    this.sessionRepository.save(token, user.id, Date.now() + 8 * 60 * 60 * 1000);
     return { token, email: user.email, role: user.role, name: user.name };
   }
 }

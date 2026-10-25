@@ -5,7 +5,14 @@ class TeamRepository {
 
   listForUser(userId) {
     return this.database.prepare(`
-      SELECT t.id, t.name, GROUP_CONCAT(u.name) AS members
+      SELECT t.id, t.name, GROUP_CONCAT(u.name) AS members,
+        NOT EXISTS (
+          SELECT 1
+          FROM registrations r
+          JOIN hackathons h ON h.id=r.hackathon_id
+          WHERE r.team_id=t.id
+            AND datetime(h.start_date) <= datetime('now')
+        ) AS can_leave
       FROM teams t JOIN team_members tm ON tm.team_id=t.id JOIN users u ON u.id=tm.user_id
       WHERE t.id IN (SELECT team_id FROM team_members WHERE user_id=?) GROUP BY t.id
     `).all(userId);
@@ -29,6 +36,21 @@ class TeamRepository {
 
   findMember(teamId, userId) {
     return this.database.prepare('SELECT 1 FROM team_members WHERE team_id=? AND user_id=?').get(teamId, userId);
+  }
+
+  hasStartedRegistration(teamId) {
+    return this.database.prepare(`
+      SELECT 1
+      FROM registrations r
+      JOIN hackathons h ON h.id=r.hackathon_id
+      WHERE r.team_id=?
+        AND datetime(h.start_date) <= datetime('now')
+      LIMIT 1
+    `).get(teamId);
+  }
+
+  removeMember(teamId, userId) {
+    return this.database.prepare('DELETE FROM team_members WHERE team_id=? AND user_id=?').run(teamId, userId);
   }
 
   create(name, userId) {

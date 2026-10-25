@@ -3,7 +3,7 @@ import { inject, Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
 import { environment } from '../../../environments/environment';
 
-export interface Team { id: number; name: string; members: string; }
+export interface Team { id: number; name: string; members: string; can_leave: boolean; }
 export interface Invitation { id: number; team_name: string; invited_email: string; status: string; }
 export interface Submission { id: number; hackathon_id: number; content: string; hackathon_name: string; team_name: string; submitted_at: string; }
 export interface WorkspaceHackathon { id: number; name: string; status: string; is_registered: boolean; is_winner: boolean; }
@@ -15,6 +15,9 @@ export class WorkspaceService {
   private readonly url = environment.apiUrl;
   public teams(): Observable<Team[]> { return this.http.get<Team[]>(`${this.url}/profile/teams`); }
   public createTeam(name: string): Observable<Team> { return this.http.post<Team>(`${this.url}/teams`, { name }); }
+  public leaveTeam(teamId: number): Observable<{ message: string }> {
+    return this.http.delete<{ message: string }>(`${this.url}/teams/${teamId}/membership`);
+  }
   public invite(teamId: number, email: string): Observable<Invitation> {
     return this.http.post<Invitation>(`${this.url}/teams/${teamId}/invitations`, { email });
   }

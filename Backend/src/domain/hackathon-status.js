@@ -1,5 +1,6 @@
 const HackathonStatus = Object.freeze({
   OPEN_REGISTRATIONS: 'ISCRIZIONI_APERTE',
+  REGISTRATION_CLOSED: 'ISCRIZIONI_CHIUSE',
   IN_PROGRESS: 'IN_CORSO',
   EVALUATION: 'VALUTAZIONE',
   CLOSED: 'CONCLUSO',
@@ -11,8 +12,18 @@ function getHackathonStatus(hackathon, now = Date.now()) {
   const deadline = Date.parse(hackathon.registration_deadline);
   const start = Date.parse(hackathon.start_date);
   const end = Date.parse(hackathon.end_date);
-  if (now < deadline || now < start) return HackathonStatus.OPEN_REGISTRATIONS;
-  if (now < end) return HackathonStatus.IN_PROGRESS;
+  if (now < deadline) {
+    return HackathonStatus.OPEN_REGISTRATIONS;
+  }
+
+  if (now < start) {
+    return HackathonStatus.REGISTRATION_CLOSED;
+  }
+
+  if (now < end) {
+    return HackathonStatus.IN_PROGRESS;
+  }
+
   return HackathonStatus.EVALUATION;
 }
 

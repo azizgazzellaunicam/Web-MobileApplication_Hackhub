@@ -44,7 +44,7 @@
           </button>
         </p>
 
-        @if (!isRegistering()) {
+        @if (!isRegistering() && demoCredentials.length > 0) {
           <div class="alert alert-light border small mt-4 mb-0">
             <strong class="d-block mb-2">Credenziali utenti demo</strong>
             <div class="table-responsive">
@@ -57,26 +57,13 @@
                   </tr>
                 </thead>
                 <tbody>
-                  <tr>
-                    <td>Utente</td>
-                    <td><code>mario&#64;hackhub.it</code></td>
-                    <td><code>password</code></td>
-                  </tr>
-                  <tr>
-                    <td>Organizzatore</td>
-                    <td><code>admin&#64;hackhub.it</code></td>
-                    <td><code>password</code></td>
-                  </tr>
-                  <tr>
-                    <td>Giudice</td>
-                    <td><code>giudice&#64;hackhub.it</code></td>
-                    <td><code>password</code></td>
-                  </tr>
-                  <tr>
-                    <td>Mentore</td>
-                    <td><code>mentore&#64;hackhub.it</code></td>
-                    <td><code>password</code></td>
-                  </tr>
+                  @for (credential of demoCredentials; track credential.email) {
+                    <tr>
+                      <td>{{ credential.role }}</td>
+                      <td><code>{{ credential.email }}</code></td>
+                      <td><code>{{ credential.password }}</code></td>
+                    </tr>
+                  }
                 </tbody>
               </table>
             </div>

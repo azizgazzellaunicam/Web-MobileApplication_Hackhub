@@ -6,6 +6,13 @@ function initializeSchema(database) {
       password_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'USER',
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
+    CREATE TABLE IF NOT EXISTS sessions (
+      token_hash TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
     CREATE TABLE IF NOT EXISTS teams (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE);
     CREATE TABLE IF NOT EXISTS team_members (team_id INTEGER NOT NULL, user_id INTEGER NOT NULL,
       PRIMARY KEY(team_id, user_id), FOREIGN KEY(team_id) REFERENCES teams(id) ON DELETE CASCADE,

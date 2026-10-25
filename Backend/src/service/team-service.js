@@ -10,6 +10,17 @@ class TeamService {
   listAll() { return this.repository.listAll(); }
   listInvitations(userId) { return this.repository.listInvitations(userId); }
 
+  leave(teamId, userId) {
+    if (!this.repository.findMember(teamId, userId)) {
+      throw httpError(HttpStatus.NOT_FOUND, 'Non appartieni a questo team.');
+    }
+    if (this.repository.hasStartedRegistration(teamId)) {
+      throw httpError(HttpStatus.CONFLICT, 'Non puoi uscire dal team: un hackathon a cui siete iscritti è già iniziato.');
+    }
+    this.repository.removeMember(teamId, userId);
+    return { message: 'Hai lasciato il team.' };
+  }
+
   create(userId, userName, name) {
     if (!name || !name.trim()) throw httpError(HttpStatus.BAD_REQUEST, 'Il campo name è obbligatorio.');
     if (this.repository.findByMember(userId)) {

@@ -18,7 +18,7 @@ export class Organizer implements OnInit {
   public readonly error = signal<string | null>(null);
   public readonly success = signal<string | null>(null);
   public readonly hackathons = signal<Hackathon[]>([]);
-  public readonly statuses: HackathonStatus[] = ['ISCRIZIONI_APERTE', 'IN_CORSO', 'VALUTAZIONE', 'CONCLUSO'];
+  public readonly statuses: HackathonStatus[] = ['ISCRIZIONI_APERTE', 'ISCRIZIONI_CHIUSE', 'IN_CORSO', 'VALUTAZIONE', 'CONCLUSO'];
   public readonly statusDrafts = signal<Record<number, HackathonStatus | null>>({});
   public readonly statusSaving = signal<number | null>(null);
   public readonly rankings = signal<Record<number, HackathonRanking>>({});
