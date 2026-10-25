@@ -92,6 +92,29 @@ Gli endpoint protetti richiedono un token di sessione nell'header:
 Authorization: Bearer <token>
 ```
 
+Il frontend usa invece il cookie `hackhub_session`, impostato dal backend con
+gli attributi `HttpOnly`, `SameSite=Lax` e `Path=/`. In produzione il cookie
+include anche `Secure`. Il token è restituito nella risposta di login per
+mantenere la compatibilità con client API esistenti, ma l'interfaccia Angular
+non lo salva nel browser.
+
+## Sessioni persistenti
+
+Le sessioni sono memorizzate nella tabella SQLite `sessions`. Il database
+conserva solo l'hash SHA-256 del token, l'utente associato, la data di
+scadenza e la data di creazione. Le sessioni durano otto ore.
+
+- il login crea una sessione e imposta il cookie `HttpOnly`;
+- il middleware elimina le sessioni scadute e rifiuta i token non validi;
+- il logout invalida la sessione nel database e cancella il cookie;
+- le sessioni valide sopravvivono al riavvio del server se il file SQLite
+  resta sullo storage persistente.
+
+Per il deployment, impostare `HACKHUB_DB_PATH` su un percorso persistente e
+servire l'applicazione in HTTPS. In produzione il cookie richiede HTTPS
+perché viene marcato `Secure`. Non usare un database temporaneo o effimero se
+si vuole mantenere l'autenticazione dopo un riavvio o un redeploy.
+
 ## Configurazione
 
 Le principali variabili d'ambiente sono:
@@ -100,6 +123,7 @@ Le principali variabili d'ambiente sono:
 - `HACKHUB_DB_PATH`: percorso del database SQLite;
 - `HACKHUB_SEED_DEMO=false`: disabilita il seed demo in sviluppo;
 - `HACKHUB_DEMO_*_PASSWORD`: sostituisce le password demo predefinite.
+- `NODE_ENV=production`: abilita il flag `Secure` del cookie di sessione.
 
 ## Test
 

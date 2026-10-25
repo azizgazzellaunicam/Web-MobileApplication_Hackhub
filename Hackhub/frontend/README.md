@@ -78,3 +78,41 @@ npm test
 ```
 
 La build viene generata nella cartella `dist/Hackhub`.
+
+## PWA
+
+HackHub usa il supporto ufficiale Angular PWA tramite
+`@angular/service-worker`. Non è presente un service worker personalizzato.
+
+- `public/manifest.webmanifest` definisce nome, icone, colori e modalità
+  `standalone`;
+- `public/icons` contiene le icone generate per le dimensioni comuni;
+- `ngsw-config.json` configura la cache delle risorse statiche Angular,
+  fogli di stile, bundle JavaScript, manifest e immagini;
+- le richieste API `/api` non sono incluse negli asset group e non vengono
+  memorizzate offline;
+- il service worker è abilitato solo nella configurazione `production` e
+  viene registrato quando l'applicazione è stabile.
+
+In sviluppo `npm start` continua a usare il dev server senza service worker.
+Per verificare la PWA:
+
+```bash
+npm run build
+npx http-server dist/Hackhub/browser
+```
+
+Aprire l'app su `localhost` o HTTPS e controllare in DevTools > Application:
+manifest, icone, service worker e voce di installazione. Gli aggiornamenti
+vengono gestiti dal ciclo ufficiale Angular: alla nuova build il browser
+scarica il nuovo gruppo di asset e lo applica secondo la registrazione del
+service worker.
+
+## Autenticazione nel browser
+
+Il backend usa una sessione persistente in SQLite e un cookie `HttpOnly`.
+Angular invia le richieste con `withCredentials` e ripristina la sessione
+all'avvio tramite `/api/auth/profile`. Il token di sessione non viene salvato
+in `localStorage` o `sessionStorage`. Le operazioni che richiedono il backend
+continuano a mostrare l'errore di rete se l'app è offline; non vengono
+considerate riuscite dalla cache PWA.
