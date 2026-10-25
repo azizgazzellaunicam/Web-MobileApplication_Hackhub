@@ -92,11 +92,11 @@ Gli endpoint protetti richiedono un token di sessione nell'header:
 Authorization: Bearer <token>
 ```
 
-Il frontend usa invece il cookie `hackhub_session`, impostato dal backend con
-gli attributi `HttpOnly`, `SameSite=Lax` e `Path=/`. In produzione il cookie
-include anche `Secure`. Il token è restituito nella risposta di login per
-mantenere la compatibilità con client API esistenti, ma l'interfaccia Angular
-non lo salva nel browser.
+Il login e la registrazione impostano il cookie `hackhub_session` con gli
+attributi `HttpOnly`, `SameSite=Lax` e `Path=/`; in produzione include anche
+`Secure`. La risposta JSON non espone il token. I client browser devono inviare
+il cookie; il middleware continua ad accettare anche `Authorization: Bearer`
+per integrazioni che dispongono del token tramite un canale separato.
 
 ## Sessioni persistenti
 

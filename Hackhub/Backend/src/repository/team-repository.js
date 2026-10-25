@@ -54,9 +54,11 @@ class TeamRepository {
   }
 
   create(name, userId) {
-    const result = this.database.prepare('INSERT INTO teams(name) VALUES(?)').run(name);
-    this.database.prepare('INSERT INTO team_members(team_id,user_id) VALUES(?,?)').run(result.lastInsertRowid, userId);
-    return { id: result.lastInsertRowid, name };
+    return this.transaction(() => {
+      const result = this.database.prepare('INSERT INTO teams(name) VALUES(?)').run(name);
+      this.database.prepare('INSERT INTO team_members(team_id,user_id) VALUES(?,?)').run(result.lastInsertRowid, userId);
+      return { id: result.lastInsertRowid, name };
+    });
   }
 
   findUserByEmail(email) {
@@ -93,10 +95,28 @@ class TeamRepository {
   }
 
   setInvitationStatus(invitationId, teamId, status, userId) {
-    if (status === 'ACCETTATO') {
-      this.database.prepare('INSERT INTO team_members(team_id,user_id) VALUES(?,?)').run(teamId, userId);
+    return this.transaction(() => {
+      if (status === 'ACCETTATO') {
+        this.database.prepare('INSERT INTO team_members(team_id,user_id) VALUES(?,?)').run(teamId, userId);
+      }
+      const result = this.database.prepare(`
+        UPDATE team_invitations SET status=?
+        WHERE id=? AND team_id=? AND invited_user_id=? AND status='IN_ATTESA'
+      `).run(status, invitationId, teamId, userId);
+      return result.changes === 1;
+    });
+  }
+
+  transaction(action) {
+    this.database.exec('BEGIN IMMEDIATE');
+    try {
+      const result = action();
+      this.database.exec('COMMIT');
+      return result;
+    } catch (error) {
+      this.database.exec('ROLLBACK');
+      throw error;
     }
-    this.database.prepare('UPDATE team_invitations SET status=? WHERE id=?').run(status, invitationId);
   }
 }
 

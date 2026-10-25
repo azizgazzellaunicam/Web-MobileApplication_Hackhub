@@ -20,6 +20,21 @@ class SupportRepository {
       WHERE s.user_id=? AND s.role='MENTOR' AND r.open=1
     `).all(userId);
   }
+  registeredTeams(hackathonId) {
+    return this.database.prepare(`
+      SELECT t.id,t.name FROM registrations r JOIN teams t ON t.id=r.team_id
+      WHERE r.hackathon_id=? ORDER BY t.name
+    `).all(hackathonId);
+  }
+  forUser(userId) {
+    return this.database.prepare(`
+      SELECT r.*,h.name AS hackathon_name,t.name AS team_name,
+        (SELECT c.link FROM support_calls c WHERE c.request_id=r.id ORDER BY c.id DESC LIMIT 1) AS call_link,
+        (SELECT c.scheduled_at FROM support_calls c WHERE c.request_id=r.id ORDER BY c.id DESC LIMIT 1) AS call_scheduled_at
+      FROM support_requests r JOIN hackathons h ON h.id=r.hackathon_id JOIN teams t ON t.id=r.team_id
+      WHERE r.team_id IN (SELECT team_id FROM team_members WHERE user_id=?) ORDER BY r.id DESC
+    `).all(userId);
+  }
   details(id) {
     return this.database.prepare(`
       SELECT r.*,h.name AS hackathon_name,t.name AS team_name

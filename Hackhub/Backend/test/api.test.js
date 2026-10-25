@@ -47,7 +47,10 @@ async function login(email, password = 'password') {
     body: JSON.stringify({ email, password }),
   });
   assert.equal(result.response.status, 200);
-  return result.body.token;
+  assert.equal(Object.hasOwn(result.body, 'token'), false);
+  const cookie = result.response.headers.get('set-cookie');
+  assert.match(cookie, /hackhub_session=[^;]+; Max-Age=28800; Path=\/; HttpOnly; SameSite=Lax/);
+  return cookie.match(/hackhub_session=([^;]+)/)[1];
 }
 
 test('rejects unauthenticated access with 401', async () => {

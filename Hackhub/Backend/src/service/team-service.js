@@ -1,5 +1,9 @@
 const { HttpStatus, httpError } = require('../http/http-errors');
 
+function isMembershipConflict(error) {
+  return error?.message === 'UNIQUE constraint failed: team_members.user_id';
+}
+
 class TeamService {
   constructor(repository, notificationService) {
     this.repository = repository;
@@ -26,7 +30,14 @@ class TeamService {
     if (this.repository.findByMember(userId)) {
       throw httpError(HttpStatus.CONFLICT, 'Un utente può appartenere a un solo team.');
     }
-    return { ...this.repository.create(name.trim(), userId), members: userName };
+    try {
+      return { ...this.repository.create(name.trim(), userId), members: userName };
+    } catch (error) {
+      if (isMembershipConflict(error)) {
+        throw httpError(HttpStatus.CONFLICT, 'Un utente può appartenere a un solo team.');
+      }
+      throw error;
+    }
   }
 
   invite(teamId, inviterId, email) {
@@ -52,7 +63,16 @@ class TeamService {
     if (status === 'ACCETTATO' && this.repository.findByMember(userId)) {
       throw httpError(HttpStatus.CONFLICT, 'Appartieni già a un team.');
     }
-    this.repository.setInvitationStatus(invitation.id, invitation.team_id, status, userId);
+    try {
+      if (!this.repository.setInvitationStatus(invitation.id, invitation.team_id, status, userId)) {
+        throw httpError(HttpStatus.CONFLICT, 'L’invito è già stato gestito.');
+      }
+    } catch (error) {
+      if (isMembershipConflict(error)) {
+        throw httpError(HttpStatus.CONFLICT, 'Appartieni già a un team.');
+      }
+      throw error;
+    }
     return { message: status === 'ACCETTATO' ? 'Invito accettato.' : 'Invito rifiutato.' };
   }
 }
