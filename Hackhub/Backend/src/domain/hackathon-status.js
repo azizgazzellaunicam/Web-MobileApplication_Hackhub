@@ -11,7 +11,7 @@ function getHackathonStatus(hackathon, now = Date.now()) {
   const deadline = Date.parse(hackathon.registration_deadline);
   const start = Date.parse(hackathon.start_date);
   const end = Date.parse(hackathon.end_date);
-  if (now < deadline || now < start) return HackathonStatus.OPEN_REGISTRATIONS;
+  if (now < deadline && now < start) return HackathonStatus.OPEN_REGISTRATIONS;
   if (now < end) return HackathonStatus.IN_PROGRESS;
   return HackathonStatus.EVALUATION;
 }
