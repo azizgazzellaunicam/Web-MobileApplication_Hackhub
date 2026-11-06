@@ -1,30 +1,40 @@
 const { HttpStatus, httpError } = require('../http/http-errors');
+const { verifyAccessToken } = require('../security/jwt');
 
-function createAuthMiddleware(sessions) {
-  function tokenFromRequest(req) {
-    const authorizationToken = req.headers.authorization?.replace(/^Bearer\s+/i, '');
-    if (authorizationToken) return authorizationToken;
-    const cookieHeader = req.headers.cookie || '';
-    return cookieHeader.split(';').map((part) => part.trim())
-      .find((part) => part.startsWith('hackhub_session='))
-      ?.slice('hackhub_session='.length);
-  }
+function tokenFromRequest(req) {
+  const authorization = req.headers.authorization || '';
+  const bearer = authorization.match(/^Bearer\s+(.+)$/i);
+  if (bearer) return bearer[1];
+  const cookieHeader = req.headers.cookie || '';
+  return cookieHeader.split(';').map((part) => part.trim())
+    .find((part) => part.startsWith('hackhub_access='))
+    ?.slice('hackhub_access='.length);
+}
 
+function createAuthMiddleware() {
   function auth(req, _res, next) {
     const token = tokenFromRequest(req);
-    const session = token && sessions.findValid(token);
-    if (!session || session.expiresAt < Date.now()) {
-      return next(httpError(HttpStatus.UNAUTHORIZED, 'Autenticazione richiesta.'));
+    if (!token) return next(httpError(HttpStatus.UNAUTHORIZED, 'Autenticazione richiesta.'));
+    try {
+      const payload = verifyAccessToken(token);
+      req.user = { id: Number(payload.sub), role: payload.role };
+      req.accessToken = token;
+      next();
+    } catch (error) {
+      next(error);
     }
-    req.user = session.user;
-    req.token = token;
-    next();
   }
 
   function authOptional(req, _res, next) {
     const token = tokenFromRequest(req);
-    const session = token && sessions.findValid(token);
-    if (session && session.expiresAt >= Date.now()) req.user = session.user;
+    if (token) {
+      try {
+        const payload = verifyAccessToken(token);
+        req.user = { id: Number(payload.sub), role: payload.role };
+      } catch {
+        // Optional authentication must not make a public route fail.
+      }
+    }
     next();
   }
 
@@ -37,4 +47,4 @@ function createAuthMiddleware(sessions) {
   return { auth, authOptional, role };
 }
 
-module.exports = { createAuthMiddleware };
+module.exports = { createAuthMiddleware, tokenFromRequest };

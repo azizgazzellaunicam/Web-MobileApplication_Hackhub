@@ -1,26 +1,38 @@
+const { HttpStatus, httpError } = require('../http/http-errors');
+
 function registerApiRoutes({
   app,
   auth,
   authOptional,
   role,
   authService,
+  userRepository,
   profileService,
   notificationService,
   hackathonService,
   competitionService,
   hackathon,
 }) {
-  const sessionCookie = (res, token, maxAge) => {
-    const attributes = [`hackhub_session=${token}`, `Max-Age=${maxAge}`, 'Path=/', 'HttpOnly', 'SameSite=Lax'];
+  const cookie = (res, name, token, maxAge, path = '/') => {
+    const attributes = [`${name}=${token}`, `Max-Age=${maxAge}`, `Path=${path}`, 'HttpOnly', 'SameSite=Lax'];
     if (process.env.NODE_ENV === 'production') attributes.push('Secure');
     res.setHeader('Set-Cookie', attributes.join('; '));
   };
-  const clearSessionCookie = (res) => {
-    res.setHeader('Set-Cookie', 'hackhub_session=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax');
+  const clearCookies = (res) => {
+    res.setHeader('Set-Cookie', [
+      'hackhub_access=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax',
+      'hackhub_refresh=; Max-Age=0; Path=/api/auth; HttpOnly; SameSite=Lax',
+    ]);
   };
   const authResponse = (res, response) => {
-    sessionCookie(res, response.token, 8 * 60 * 60);
-    const { token, ...publicResponse } = response;
+    const accessCookie = [`hackhub_access=${response.accessToken}`, 'Max-Age=900', 'Path=/', 'HttpOnly', 'SameSite=Lax'];
+    const refreshCookie = [`hackhub_refresh=${response.refreshToken}`, 'Max-Age=604800', 'Path=/api/auth', 'HttpOnly', 'SameSite=Lax'];
+    if (process.env.NODE_ENV === 'production') {
+      accessCookie.push('Secure');
+      refreshCookie.push('Secure');
+    }
+    res.setHeader('Set-Cookie', [accessCookie.join('; '), refreshCookie.join('; ')]);
+    const { accessToken, refreshToken, ...publicResponse } = response;
     res.json(publicResponse);
   };
 
@@ -30,12 +42,25 @@ function registerApiRoutes({
   app.post('/api/auth/login', (req, res, next) => {
     try { authResponse(res, authService.login(req.body)); } catch (error) { next(error); }
   });
-  app.post('/api/auth/logout', auth, (req, res) => {
-    authService.logout(req.token);
-    clearSessionCookie(res);
+  app.post('/api/auth/refresh', (req, res, next) => {
+    try {
+      const token = req.headers.cookie?.split(';').map((part) => part.trim())
+        .find((part) => part.startsWith('hackhub_refresh='))?.slice('hackhub_refresh='.length);
+      authResponse(res, authService.refresh(token));
+    } catch (error) { next(error); }
+  });
+  app.post('/api/auth/logout', (req, res) => {
+    const token = req.headers.cookie?.split(';').map((part) => part.trim())
+      .find((part) => part.startsWith('hackhub_refresh='))?.slice('hackhub_refresh='.length);
+    authService.logout(token);
+    clearCookies(res);
     res.sendStatus(204);
   });
-  app.get('/api/auth/profile', auth, (req, res) => res.json(req.user));
+  app.get('/api/auth/profile', auth, (req, res, next) => {
+    const user = userRepository.findById(req.user.id);
+    if (!user) return next(httpError(HttpStatus.UNAUTHORIZED, 'Autenticazione richiesta.'));
+    res.json(user);
+  });
   app.put('/api/auth/profile', auth, (req, res, next) => {
     try {
       const user = authService.updateProfile(req.user.id, req.body);

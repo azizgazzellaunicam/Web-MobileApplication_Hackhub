@@ -12,6 +12,7 @@ process.env.HACKHUB_DEMO_ORGANIZER_PASSWORD = 'test-organizer-demo-password-2026
 process.env.HACKHUB_DEMO_JUDGE_PASSWORD = 'test-judge-demo-password-2026';
 process.env.HACKHUB_DEMO_MENTOR_PASSWORD = 'test-mentor-demo-password-2026';
 process.env.HACKHUB_DB_PATH = databasePath;
+process.env.HACKHUB_JWT_SECRET = 'test-secret-that-is-at-least-32-characters-long';
 
 const { app, database } = require('../src/app');
 let server;
@@ -44,7 +45,7 @@ async function request(url, options = {}) {
 function asUser(token, options = {}) {
   return {
     ...options,
-    headers: { ...options.headers, cookie: `hackhub_session=${token}` },
+    headers: { ...options.headers, cookie: `hackhub_access=${token}` },
   };
 }
 
@@ -56,8 +57,8 @@ async function login(email, password) {
   assert.equal(response.status, 200);
   assert.equal(Object.hasOwn(body, 'token'), false);
   const cookie = response.headers.get('set-cookie');
-  assert.match(cookie, /hackhub_session=[^;]+; Max-Age=28800; Path=\/; HttpOnly; SameSite=Lax/);
-  return cookie.match(/hackhub_session=([^;]+)/)[1];
+  assert.match(cookie, /hackhub_access=[^;]+; Max-Age=900; Path=\/; HttpOnly; SameSite=Lax/);
+  return cookie.match(/hackhub_access=([^;]+)/)[1];
 }
 
 async function createHackathon(organizerToken, staff, name) {
@@ -89,7 +90,7 @@ test('participants can join a team by invitation and manage their notifications'
   assert.equal(registration.body.role, 'USER');
   assert.equal(Object.hasOwn(registration.body, 'token'), false);
   const inviteeCookie = registration.response.headers.get('set-cookie');
-  assert.match(inviteeCookie, /hackhub_session=[^;]+/);
+  assert.match(inviteeCookie, /hackhub_access=[^;]+/);
 
   const teams = await request('/api/teams', asUser(participantToken));
   const teamId = teams.body[0].id;
@@ -99,7 +100,7 @@ test('participants can join a team by invitation and manage their notifications'
   }));
   assert.equal(invitation.response.status, 201);
 
-  const inviteeToken = inviteeCookie.match(/hackhub_session=([^;]+)/)[1];
+  const inviteeToken = inviteeCookie.match(/hackhub_access=([^;]+)/)[1];
   const invitations = await request('/api/invitations', asUser(inviteeToken));
   assert.equal(invitations.body.length, 1);
   assert.equal(invitations.body[0].status, 'IN_ATTESA');
@@ -134,7 +135,7 @@ test('participants can join a team by invitation and manage their notifications'
     method: 'POST',
     body: JSON.stringify({ name: 'Rejected Invitee', email: rejectedEmail, password: 'rejected-password-2026' }),
   });
-  const rejectedInviteeToken = rejectedInvitee.response.headers.get('set-cookie').match(/hackhub_session=([^;]+)/)[1];
+  const rejectedInviteeToken = rejectedInvitee.response.headers.get('set-cookie').match(/hackhub_access=([^;]+)/)[1];
   const rejectedInvitation = await request(`/api/teams/${teamId}/invitations`, asUser(participantToken, {
     method: 'POST',
     body: JSON.stringify({ email: rejectedEmail }),
@@ -152,7 +153,7 @@ test('participants can join a team by invitation and manage their notifications'
     method: 'POST',
     body: JSON.stringify({ name: 'Solo Participant', email: soloEmail, password: 'solo-password-2026' }),
   });
-  const soloToken = solo.response.headers.get('set-cookie').match(/hackhub_session=([^;]+)/)[1];
+  const soloToken = solo.response.headers.get('set-cookie').match(/hackhub_access=([^;]+)/)[1];
   const createdTeam = await request('/api/teams', asUser(soloToken, {
     method: 'POST',
     body: JSON.stringify({ name: `Solo Team ${Date.now()}` }),

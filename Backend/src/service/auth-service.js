@@ -1,10 +1,11 @@
-const { randomBytes } = require('node:crypto');
+const { randomUUID } = require('node:crypto');
 const { HttpStatus, httpError } = require('../http/http-errors');
+const { refreshTokenTtlSeconds, createAccessToken, createRefreshToken } = require('../security/jwt');
 
 class AuthService {
-  constructor(userRepository, sessionRepository, hashPassword, verifyPassword) {
+  constructor(userRepository, refreshTokenRepository, hashPassword, verifyPassword) {
     this.userRepository = userRepository;
-    this.sessionRepository = sessionRepository;
+    this.refreshTokenRepository = refreshTokenRepository;
     this.hashPassword = hashPassword;
     this.verifyPassword = verifyPassword;
   }
@@ -31,7 +32,7 @@ class AuthService {
   }
 
   logout(token) {
-    this.sessionRepository.delete(token);
+    this.refreshTokenRepository.revoke(token);
   }
 
   updateProfile(userId, input) {
@@ -49,9 +50,53 @@ class AuthService {
   createSession(userId) {
     const user = this.userRepository.findById(userId);
     if (!user) throw httpError(HttpStatus.INTERNAL_SERVER_ERROR, 'Utente non trovato.');
-    const token = randomBytes(32).toString('hex');
-    this.sessionRepository.save(token, user.id, Date.now() + 8 * 60 * 60 * 1000);
-    return { token, email: user.email, role: user.role, name: user.name };
+    const refreshToken = createRefreshToken();
+    this.refreshTokenRepository.save(
+      refreshToken,
+      user.id,
+      Date.now() + refreshTokenTtlSeconds * 1000,
+      randomUUID(),
+    );
+    return {
+      accessToken: createAccessToken(user),
+      refreshToken,
+      email: user.email,
+      role: user.role,
+      name: user.name,
+    };
+  }
+
+  refresh(token) {
+    const current = this.refreshTokenRepository.find(token);
+    if (!current) throw httpError(HttpStatus.UNAUTHORIZED, 'Refresh token non valido.');
+    if (current.revoked_at) {
+      this.refreshTokenRepository.revokeFamily(current.family_id);
+      throw httpError(HttpStatus.UNAUTHORIZED, 'Refresh token riutilizzato.');
+    }
+    const user = this.userRepository.findById(current.user_id);
+    if (!user || current.expires_at <= Date.now()) {
+      this.refreshTokenRepository.revoke(token);
+      throw httpError(HttpStatus.UNAUTHORIZED, 'Refresh token scaduto.');
+    }
+    const replacement = createRefreshToken();
+    if (!this.refreshTokenRepository.rotate(
+      token,
+      replacement,
+      user.id,
+      Date.now() + refreshTokenTtlSeconds * 1000,
+      current.family_id,
+    )) {
+      const latest = this.refreshTokenRepository.find(token);
+      if (latest?.revoked_at) this.refreshTokenRepository.revokeFamily(latest.family_id);
+      throw httpError(HttpStatus.UNAUTHORIZED, 'Refresh token non valido.');
+    }
+    return {
+      accessToken: createAccessToken(user),
+      refreshToken: replacement,
+      email: user.email,
+      role: user.role,
+      name: user.name,
+    };
   }
 }
 
