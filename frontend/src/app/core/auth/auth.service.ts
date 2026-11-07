@@ -1,6 +1,6 @@
 import { inject, Injectable, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable, catchError, map, of, tap } from 'rxjs';
+import { Observable, catchError, finalize, map, of, shareReplay, tap } from 'rxjs';
 import { environment } from '../../../environments/environment';
 
 export interface AuthResponse {
@@ -23,6 +23,7 @@ export class Auth {
   public readonly isAuthenticated = signal(false);
   public readonly email = signal('');
   public readonly role = signal<UserRole>('USER');
+  private refreshInFlight$: Observable<boolean> | null = null;
 
   public login(email: string, password: string): Observable<AuthResponse> {
     return this.http
@@ -53,6 +54,21 @@ export class Auth {
     return this.http.post<void>(`${environment.apiUrl}/auth/logout`, {}, { withCredentials: true }).pipe(
       tap(() => this.clearSession()),
     );
+  }
+
+  public refreshSession(): Observable<boolean> {
+    if (!this.refreshInFlight$) {
+      this.refreshInFlight$ = this.http
+        .post<AuthResponse>(`${environment.apiUrl}/auth/refresh`, {}, { withCredentials: true })
+        .pipe(
+          tap((response) => this.saveSession(response)),
+          map(() => true),
+          catchError(() => of(false)),
+          finalize(() => { this.refreshInFlight$ = null; }),
+          shareReplay({ bufferSize: 1, refCount: false }),
+        );
+    }
+    return this.refreshInFlight$;
   }
 
   public clearSession(): void {
