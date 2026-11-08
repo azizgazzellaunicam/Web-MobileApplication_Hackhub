@@ -53,6 +53,32 @@ class TeamRepository {
     return this.database.prepare('DELETE FROM team_members WHERE team_id=? AND user_id=?').run(teamId, userId);
   }
 
+  countMembers(teamId) {
+    return this.database.prepare('SELECT COUNT(*) AS count FROM team_members WHERE team_id=?').get(teamId).count;
+  }
+
+  hasProtectedTeamReferences(teamId) {
+    return this.database.prepare(`
+      SELECT 1
+      FROM support_requests
+      WHERE team_id=?
+      UNION
+      SELECT 1
+      FROM hackathons
+      WHERE winner_team_id=?
+      LIMIT 1
+    `).get(teamId, teamId);
+  }
+
+  deleteTeamIfEmpty(teamId) {
+    return this.transaction(() => {
+      if (this.countMembers(teamId) !== 0) return false;
+      if (this.hasProtectedTeamReferences(teamId)) return false;
+      const result = this.database.prepare('DELETE FROM teams WHERE id=?').run(teamId);
+      return result.changes > 0;
+    });
+  }
+
   create(name, userId) {
     return this.transaction(() => {
       const result = this.database.prepare('INSERT INTO teams(name) VALUES(?)').run(name);

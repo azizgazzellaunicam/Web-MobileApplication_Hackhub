@@ -77,4 +77,61 @@ describe('Staff', () => {
     http.expectOne('/api/support-requests/open').flush([]);
     http.verify();
   });
+
+  it('reloads submissions after a successful evaluation', async () => {
+    await TestBed.configureTestingModule({
+      imports: [Staff],
+      providers: [provideHttpClient(), provideHttpClientTesting()],
+    }).compileComponents();
+
+    const auth = TestBed.inject(Auth);
+    auth.role.set('JUDGE');
+    const http = TestBed.inject(HttpTestingController);
+    const fixture = TestBed.createComponent(Staff);
+    fixture.detectChanges();
+
+    http.expectOne('/api/hackathons/assigned').flush([{
+      id: 7,
+      name: 'Evaluation Hackathon',
+      regulation: 'Test',
+      registration_deadline: '2027-01-01T23:59:00Z',
+      start_date: '2027-01-02T09:00:00Z',
+      end_date: '2027-01-04T18:00:00Z',
+      location: 'Roma',
+      prize: 500,
+      max_team_size: 5,
+      status: 'VALUTAZIONE' as const,
+      status_override: 'VALUTAZIONE' as const,
+      is_registered: false,
+      assigned_role: 'JUDGE' as const,
+    }]);
+    http.expectOne('/api/hackathons/7/submissions').flush([{
+      id: 12,
+      content: 'https://example.test/project',
+      team_name: 'Alpha',
+      hackathon_id: 7,
+    }]);
+
+    const form = document.createElement('form');
+    const scoreInput = document.createElement('input');
+    scoreInput.name = 'score';
+    scoreInput.value = '9';
+    const commentInput = document.createElement('input');
+    commentInput.name = 'comment';
+    commentInput.value = 'Ottimo lavoro';
+    form.append(scoreInput, commentInput);
+
+    fixture.componentInstance.evaluate(
+      { preventDefault() {}, currentTarget: form } as unknown as Event,
+      { id: 12, content: 'https://example.test/project', team_name: 'Alpha', hackathon_id: 7 },
+    );
+
+    const evaluateRequest = http.expectOne('/api/submissions/12/evaluations');
+    expect(evaluateRequest.request.body).toEqual({ score: 9, comment: 'Ottimo lavoro' });
+    evaluateRequest.flush({ message: 'Valutazione registrata.' });
+
+    http.expectOne('/api/hackathons/7/submissions').flush([]);
+    expect(fixture.componentInstance.notice()).toBe('Valutazione registrata.');
+    http.verify();
+  });
 });

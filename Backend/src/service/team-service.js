@@ -22,6 +22,7 @@ class TeamService {
       throw httpError(HttpStatus.CONFLICT, 'Non puoi uscire dal team: un hackathon a cui siete iscritti è già iniziato.');
     }
     this.repository.removeMember(teamId, userId);
+    this.repository.deleteTeamIfEmpty(teamId);
     return { message: 'Hai lasciato il team.' };
   }
 

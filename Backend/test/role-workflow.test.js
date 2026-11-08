@@ -165,6 +165,8 @@ test('participants can join a team by invitation and manage their notifications'
   assert.equal(leftTeam.response.status, 200);
   const soloTeams = await request('/api/teams', asUser(soloToken));
   assert.deepEqual(soloTeams.body, []);
+  const persistedSoloTeam = database.prepare('SELECT 1 FROM teams WHERE id=?').get(createdTeam.body.id);
+  assert.equal(persistedSoloTeam, undefined);
 });
 
 test('organizer, participant, judge, and mentor complete an event workflow', async () => {
@@ -199,6 +201,11 @@ test('organizer, participant, judge, and mentor complete an event workflow', asy
   }));
   assert.equal(updated.response.status, 200);
   assert.match(updated.body.name, /aggiornato/);
+  const judgeAssignmentsAfterUpdate = database.prepare(`
+    SELECT user_id FROM hackathon_staff WHERE hackathon_id=? AND role='JUDGE' ORDER BY user_id
+  `).all(hackathonId);
+  assert.ok(judgeAssignmentsAfterUpdate.some((assignment) => assignment.user_id === secondJudgeId));
+  assert.ok(judgeAssignmentsAfterUpdate.length >= 2);
 
   const judgeAssignments = await request('/api/hackathons/assigned', asUser(judgeToken));
   const mentorAssignments = await request('/api/hackathons/assigned', asUser(mentorToken));
@@ -230,11 +237,21 @@ test('organizer, participant, judge, and mentor complete an event workflow', asy
     method: 'PUT',
     body: JSON.stringify({ status: 'IN_CORSO' }),
   }));
+  const invalidSubmissionContent = await request(`/api/hackathons/${hackathonId}/submissions`, asUser(participantToken, {
+    method: 'POST',
+    body: JSON.stringify({ content: { url: 'https://example.test/not-string' } }),
+  }));
+  assert.equal(invalidSubmissionContent.response.status, 400);
   const submission = await request(`/api/hackathons/${hackathonId}/submissions`, asUser(participantToken, {
     method: 'POST',
     body: JSON.stringify({ content: 'https://example.test/project' }),
   }));
   assert.equal(submission.response.status, 201);
+  const invalidUpdateContent = await request(`/api/submissions/${submission.body.id}`, asUser(participantToken, {
+    method: 'PUT',
+    body: JSON.stringify({ content: { url: 'https://example.test/not-string-update' } }),
+  }));
+  assert.equal(invalidUpdateContent.response.status, 400);
   const editedSubmission = await request(`/api/submissions/${submission.body.id}`, asUser(participantToken, {
     method: 'PUT',
     body: JSON.stringify({ content: 'https://example.test/project-v2' }),
@@ -353,20 +370,53 @@ test('organizer, participant, judge, and mentor complete an event workflow', asy
     method: 'PUT',
     body: JSON.stringify({ status: 'ISCRIZIONI_APERTE' }),
   }));
+  const secondParticipantEmail = `manual-second-${Date.now()}@example.test`;
+  const secondParticipantRegistration = await request('/api/auth/register', {
+    method: 'POST',
+    body: JSON.stringify({
+      name: 'Manual Second Participant',
+      email: secondParticipantEmail,
+      password: 'manual-second-password-2026',
+    }),
+  });
+  assert.equal(secondParticipantRegistration.response.status, 200);
+  const secondParticipantToken = secondParticipantRegistration.response.headers
+    .get('set-cookie')
+    .match(/hackhub_access=([^;]+)/)[1];
+  const secondParticipantTeam = await request('/api/teams', asUser(secondParticipantToken, {
+    method: 'POST',
+    body: JSON.stringify({ name: `Manual Team ${Date.now()}` }),
+  }));
+  assert.equal(secondParticipantTeam.response.status, 201);
   const secondRegistration = await request(`/api/hackathons/${manualEvent.body.id}/registrations`, asUser(participantToken, {
     method: 'POST',
     body: JSON.stringify({}),
   }));
   assert.equal(secondRegistration.response.status, 201);
+  const thirdRegistration = await request(`/api/hackathons/${manualEvent.body.id}/registrations`, asUser(secondParticipantToken, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  }));
+  assert.equal(thirdRegistration.response.status, 201);
   await request(`/api/hackathons/${manualEvent.body.id}/status`, asUser(organizerToken, {
     method: 'PUT',
     body: JSON.stringify({ status: 'IN_CORSO' }),
   }));
+  const manualWinnerOutsideEvaluation = await request(`/api/hackathons/${manualEvent.body.id}/winner/${teamId}`, asUser(organizerToken, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  }));
+  assert.equal(manualWinnerOutsideEvaluation.response.status, 409);
   const secondSubmission = await request(`/api/hackathons/${manualEvent.body.id}/submissions`, asUser(participantToken, {
     method: 'POST',
     body: JSON.stringify({ content: 'https://example.test/manual-winner' }),
   }));
   assert.equal(secondSubmission.response.status, 201);
+  const thirdSubmission = await request(`/api/hackathons/${manualEvent.body.id}/submissions`, asUser(secondParticipantToken, {
+    method: 'POST',
+    body: JSON.stringify({ content: 'https://example.test/manual-second-team' }),
+  }));
+  assert.equal(thirdSubmission.response.status, 201);
   await request(`/api/hackathons/${manualEvent.body.id}/status`, asUser(organizerToken, {
     method: 'PUT',
     body: JSON.stringify({ status: 'VALUTAZIONE' }),
@@ -376,6 +426,16 @@ test('organizer, participant, judge, and mentor complete an event workflow', asy
     body: JSON.stringify({ score: 8, comment: 'Valutazione valida.' }),
   }));
   assert.equal(secondEvaluation.response.status, 201);
+  const earlyManualWinner = await request(`/api/hackathons/${manualEvent.body.id}/winner/${teamId}`, asUser(organizerToken, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  }));
+  assert.equal(earlyManualWinner.response.status, 409);
+  const thirdEvaluation = await request(`/api/submissions/${thirdSubmission.body.id}/evaluations`, asUser(judgeToken, {
+    method: 'POST',
+    body: JSON.stringify({ score: 7.5, comment: 'Valutazione del secondo team.' }),
+  }));
+  assert.equal(thirdEvaluation.response.status, 201);
   const manualWinner = await request(`/api/hackathons/${manualEvent.body.id}/winner/${teamId}`, asUser(organizerToken, {
     method: 'POST',
     body: JSON.stringify({}),

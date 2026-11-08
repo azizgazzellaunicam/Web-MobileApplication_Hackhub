@@ -52,7 +52,7 @@ export class Auth {
 
   public logout(): Observable<void> {
     return this.http.post<void>(`${environment.apiUrl}/auth/logout`, {}, { withCredentials: true }).pipe(
-      tap(() => this.clearSession()),
+      finalize(() => this.clearSession()),
     );
   }
 

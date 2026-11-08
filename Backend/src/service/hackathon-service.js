@@ -137,6 +137,8 @@ class HackathonService {
       location: merged.location.trim(),
       prize: Number(merged.prize),
       maxTeamSize: Number(merged.maxTeamSize),
+      previousJudgeId: currentJudge?.user_id ?? null,
+      previousMentorId: currentMentor?.user_id ?? null,
       judgeId: judge.id,
       mentorId: mentor.id,
     });

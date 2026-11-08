@@ -166,9 +166,22 @@ class HackathonRepository {
         input.maxTeamSize,
         id,
       );
-      this.database.prepare('DELETE FROM hackathon_staff WHERE hackathon_id=?').run(id);
-      this.database.prepare('INSERT INTO hackathon_staff(hackathon_id,user_id,role) VALUES (?,?,?)').run(id, input.judgeId, 'JUDGE');
-      this.database.prepare('INSERT INTO hackathon_staff(hackathon_id,user_id,role) VALUES (?,?,?)').run(id, input.mentorId, 'MENTOR');
+      this.database.prepare(`
+        INSERT OR IGNORE INTO hackathon_staff(hackathon_id,user_id,role) VALUES (?,?,?)
+      `).run(id, input.judgeId, 'JUDGE');
+      this.database.prepare(`
+        INSERT OR IGNORE INTO hackathon_staff(hackathon_id,user_id,role) VALUES (?,?,?)
+      `).run(id, input.mentorId, 'MENTOR');
+      if (input.previousJudgeId && input.previousJudgeId !== input.judgeId) {
+        this.database.prepare(`
+          DELETE FROM hackathon_staff WHERE hackathon_id=? AND user_id=? AND role='JUDGE'
+        `).run(id, input.previousJudgeId);
+      }
+      if (input.previousMentorId && input.previousMentorId !== input.mentorId) {
+        this.database.prepare(`
+          DELETE FROM hackathon_staff WHERE hackathon_id=? AND user_id=? AND role='MENTOR'
+        `).run(id, input.previousMentorId);
+      }
       this.database.prepare('COMMIT').run();
       return this.findById(id);
     } catch (error) {

@@ -66,7 +66,13 @@ export class Staff implements OnInit {
     const score = Number(values.get('score'));
     const comment = String(values.get('comment') ?? '').trim();
     this.service.evaluate(submission.id, score, comment).subscribe({
-      next: (response) => { this.notice.set(response.message); form.reset(); },
+      next: (response) => {
+        this.error.set(null);
+        this.notice.set(response.message);
+        form.reset();
+        const selectedHackathon = this.selectedHackathon() ?? submission.hackathon_id;
+        this.select(selectedHackathon);
+      },
       error: (error: unknown) => this.error.set(this.message(error)),
     });
   }

@@ -26,7 +26,9 @@ class CompetitionService {
     if (!team || !hackathon || !this.repository.registration(hackathonId, team.team_id)) throw httpError(HttpStatus.CONFLICT, 'Il team non è iscritto a questo hackathon.');
     if (!['IN_CORSO', 'VALUTAZIONE'].includes(this.statusOf(hackathon))) throw httpError(HttpStatus.CONFLICT, 'Le sottomissioni sono consentite durante l’hackathon o la valutazione.');
     if (this.repository.submissionForTeam(hackathonId, team.team_id)) throw httpError(HttpStatus.CONFLICT, 'Il team ha già inviato una sottomissione.');
-    if (!content || !content.trim()) throw httpError(HttpStatus.BAD_REQUEST, 'Il contenuto della sottomissione è obbligatorio.');
+    if (typeof content !== 'string' || !content.trim()) {
+      throw httpError(HttpStatus.BAD_REQUEST, 'Il contenuto della sottomissione è obbligatorio.');
+    }
     return this.repository.createSubmission(hackathonId, team.team_id, content.trim());
   }
   updateSubmission(userId, id, content) {
@@ -37,7 +39,9 @@ class CompetitionService {
     if (!hackathon) throw httpError(HttpStatus.NOT_FOUND, 'Hackathon non trovato.');
     if (!['IN_CORSO', 'VALUTAZIONE'].includes(this.statusOf(hackathon))) throw httpError(HttpStatus.CONFLICT, 'La sottomissione non è più modificabile.');
     if (this.repository.hasEvaluation(id)) throw httpError(HttpStatus.CONFLICT, 'La sottomissione è già stata valutata.');
-    if (!content || !content.trim()) throw httpError(HttpStatus.BAD_REQUEST, 'Il contenuto della sottomissione è obbligatorio.');
+    if (typeof content !== 'string' || !content.trim()) {
+      throw httpError(HttpStatus.BAD_REQUEST, 'Il contenuto della sottomissione è obbligatorio.');
+    }
     return this.repository.updateSubmission(id, content.trim());
   }
   submissions(userId, id) {
@@ -79,11 +83,7 @@ class CompetitionService {
   proclaimAuto(userId, hackathonId) {
     const hackathon = this.hackathonRepository.findById(hackathonId);
     this.assertCanProclaim(hackathon, userId);
-    if (this.statusOf(hackathon) === 'CONCLUSO') throw httpError(HttpStatus.CONFLICT, 'Hackathon già concluso.');
-    const submissions = this.hackathonRepository.submissions(hackathonId);
-    if (!submissions.length || submissions.some((item) => !this.hackathonRepository.hasEvaluation(item.id))) {
-      throw httpError(HttpStatus.CONFLICT, 'Tutte le sottomissioni devono essere valutate.');
-    }
+    this.assertAllSubmissionsEvaluated(hackathonId);
     const entries = this.hackathonRepository.ranking(hackathonId).map((entry) => ({
       teamId: entry.team_id,
       teamName: entry.team_name,
@@ -98,7 +98,7 @@ class CompetitionService {
   proclaimManual(userId, hackathonId, teamId) {
     const hackathon = this.hackathonRepository.findById(hackathonId);
     this.assertCanProclaim(hackathon, userId);
-    if (hackathon.winner_team_id) throw httpError(HttpStatus.CONFLICT, 'Hackathon già concluso.');
+    this.assertAllSubmissionsEvaluated(hackathonId);
     if (!this.hackathonRepository.isTeamRegistered(hackathonId, teamId)) {
       throw httpError(HttpStatus.CONFLICT, 'Il team vincitore non è iscritto.');
     }
@@ -116,6 +116,17 @@ class CompetitionService {
     if (!hackathon) throw httpError(HttpStatus.NOT_FOUND, 'Hackathon non trovato.');
     if (hackathon.organizer_id !== userId) {
       throw httpError(HttpStatus.FORBIDDEN, 'Solo l’organizzatore dell’hackathon può proclamare il vincitore.');
+    }
+    if (this.statusOf(hackathon) !== 'VALUTAZIONE') {
+      throw httpError(HttpStatus.CONFLICT, 'La proclamazione è consentita solo in fase di valutazione.');
+    }
+    if (hackathon.winner_team_id) throw httpError(HttpStatus.CONFLICT, 'Hackathon già concluso.');
+  }
+
+  assertAllSubmissionsEvaluated(hackathonId) {
+    const submissions = this.hackathonRepository.submissions(hackathonId);
+    if (!submissions.length || submissions.some((item) => !this.hackathonRepository.hasEvaluation(item.id))) {
+      throw httpError(HttpStatus.CONFLICT, 'Tutte le sottomissioni devono essere valutate.');
     }
   }
 
