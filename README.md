@@ -8,9 +8,10 @@ worker ufficiale solo nella build di produzione e mette in cache le risorse
 statiche dell'applicazione. Le API e i dati autenticati non vengono aggiunti
 alla cache offline.
 
-L'autenticazione usa sessioni persistenti nel database SQLite. Il browser
-riceve un cookie `HttpOnly`, mentre il backend conserva solo l'hash del token
-di sessione, con scadenza di otto ore e invalidazione esplicita al logout.
+L'autenticazione usa un access token JWT a vita breve e un refresh token
+opaco persistito su SQLite in forma hashata. Il browser riceve solo cookie
+`HttpOnly` (`hackhub_access` e `hackhub_refresh`), senza uso di `localStorage`
+o `sessionStorage`.
 
 ## Requisiti
 
@@ -60,5 +61,5 @@ cd ..\frontend
 npm test
 ```
 
-I test backend includono autenticazione, logout, scadenza e persistenza delle
-sessioni, API protette e configurazione PWA.
+I test backend includono autenticazione JWT, refresh token con rotazione e
+revoca, autorizzazioni per ruolo, API protette e configurazione PWA.

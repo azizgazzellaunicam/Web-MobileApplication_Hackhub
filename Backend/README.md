@@ -72,6 +72,7 @@ produzione.
 | GET | `/health` | Verifica lo stato del server |
 | POST | `/api/auth/register` | Registra un nuovo utente |
 | POST | `/api/auth/login` | Esegue l'accesso |
+| POST | `/api/auth/refresh` | Rinnova la sessione autenticata |
 | POST | `/api/auth/logout` | Chiude la sessione |
 | GET/PUT | `/api/auth/profile` | Legge o aggiorna il profilo |
 | GET | `/api/hackathons` | Restituisce gli hackathon |
@@ -86,29 +87,35 @@ produzione.
 | GET | `/api/notifications` | Restituisce le notifiche |
 | GET | `/api/hackathons/:id/ranking` | Restituisce la classifica |
 
-Gli endpoint protetti richiedono un token di sessione nell'header:
+Gli endpoint protetti accettano l'access token JWT in cookie `hackhub_access`
+oppure nell'header:
 
 ```text
 Authorization: Bearer <token>
 ```
 
-Il login e la registrazione impostano il cookie `hackhub_session` con gli
-attributi `HttpOnly`, `SameSite=Lax` e `Path=/`; in produzione include anche
-`Secure`. La risposta JSON non espone il token. I client browser devono inviare
-il cookie; il middleware continua ad accettare anche `Authorization: Bearer`
-per integrazioni che dispongono del token tramite un canale separato.
+Il login e la registrazione impostano due cookie `HttpOnly`:
 
-## Sessioni persistenti
+- `hackhub_access`: access token JWT (durata breve, predefinita `15m`);
+- `hackhub_refresh`: refresh token opaco (predefinita `7 giorni`, path `/api/auth`).
 
-Le sessioni sono memorizzate nella tabella SQLite `sessions`. Il database
-conserva solo l'hash SHA-256 del token, l'utente associato, la data di
-scadenza e la data di creazione. Le sessioni durano otto ore.
+Entrambi usano `SameSite=Lax`; in produzione includono `Secure`.
+La risposta JSON non espone mai i token. Il middleware continua ad accettare
+anche `Authorization: Bearer` per integrazioni che ricevono l'access token da
+un canale separato.
 
-- il login crea una sessione e imposta il cookie `HttpOnly`;
-- il middleware elimina le sessioni scadute e rifiuta i token non validi;
-- il logout invalida la sessione nel database e cancella il cookie;
-- le sessioni valide sopravvivono al riavvio del server se il file SQLite
-  resta sullo storage persistente.
+## Token e persistenza
+
+I refresh token sono memorizzati nella tabella SQLite `refresh_tokens`.
+Il database conserva solo l'hash SHA-256 del refresh token, l'utente associato,
+scadenza, stato di revoca, famiglia e collegamento di rotazione.
+
+- il login crea una coppia access/refresh e imposta i cookie `HttpOnly`;
+- l'access token viene verificato localmente (firma, algoritmo, issuer/audience, exp)
+  senza query SQLite per ogni richiesta;
+- `POST /api/auth/refresh` ruota il refresh token in modo atomico;
+- il riuso di un refresh già ruotato invalida la famiglia del token;
+- il logout revoca il refresh token corrente e cancella entrambi i cookie.
 
 Per il deployment, impostare `HACKHUB_DB_PATH` su un percorso persistente e
 servire l'applicazione in HTTPS. In produzione il cookie richiede HTTPS
@@ -123,7 +130,24 @@ Le principali variabili d'ambiente sono:
 - `HACKHUB_DB_PATH`: percorso del database SQLite;
 - `HACKHUB_SEED_DEMO=false`: disabilita il seed demo in sviluppo;
 - `HACKHUB_DEMO_*_PASSWORD`: sostituisce le password demo predefinite.
-- `NODE_ENV=production`: abilita il flag `Secure` del cookie di sessione.
+- `HACKHUB_JWT_SECRET`: chiave JWT di almeno 32 caratteri; obbligatoria in
+  produzione;
+- `HACKHUB_ACCESS_TOKEN_TTL`: durata del JWT access token, predefinita a `15m`;
+- `HACKHUB_REFRESH_TOKEN_TTL_SECONDS`: durata del refresh token in secondi,
+  predefinita a `604800` (7 giorni).
+
+In sviluppo, se `HACKHUB_JWT_SECRET` non è impostata, il backend genera una
+chiave casuale temporanea e la stampa come avviso. I token diventano invalidi
+al riavvio del processo. Per mantenere le sessioni, impostare comunque una
+chiave persistente, ad esempio in PowerShell:
+
+```powershell
+$env:HACKHUB_JWT_SECRET = 'inserire-una-chiave-casuale-di-almeno-32-caratteri'
+npm start
+```
+- `HACKHUB_JWT_ISSUER`: issuer del JWT, predefinito `hackhub-api`;
+- `HACKHUB_JWT_AUDIENCE`: audience del JWT, predefinito `hackhub-web`;
+- `NODE_ENV=production`: abilita il flag `Secure` dei cookie auth.
 
 ## Test
 
@@ -131,5 +155,5 @@ Le principali variabili d'ambiente sono:
 npm test
 ```
 
-I test utilizzano un database temporaneo e verificano autenticazione,
-autorizzazioni e accesso ai dati.
+I test utilizzano un database temporaneo e verificano autenticazione JWT,
+refresh con rotazione/revoca, autorizzazioni e accesso ai dati.

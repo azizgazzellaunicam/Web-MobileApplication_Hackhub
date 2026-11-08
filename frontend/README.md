@@ -110,9 +110,18 @@ service worker.
 
 ## Autenticazione nel browser
 
-Il backend usa una sessione persistente in SQLite e un cookie `HttpOnly`.
-Angular invia le richieste con `withCredentials` e ripristina la sessione
-all'avvio tramite `/api/auth/profile`. Il token di sessione non viene salvato
-in `localStorage` o `sessionStorage`. Le operazioni che richiedono il backend
-continuano a mostrare l'errore di rete se l'app è offline; non vengono
-considerate riuscite dalla cache PWA.
+Il backend usa access token JWT e refresh token opachi via cookie `HttpOnly`.
+Angular invia le richieste con `withCredentials`, ripristina la sessione
+all'avvio tramite `/api/auth/profile` e, in caso di `401`, esegue il rinnovo
+automatico con `/api/auth/refresh`.
+
+L'interceptor coordina le richieste simultanee: quando più chiamate ricevono
+`401`, viene eseguito un solo refresh in-flight e le richieste originali
+vengono ritentate dopo il rinnovo riuscito.
+
+I token non vengono salvati in `localStorage` o `sessionStorage`. Se il refresh
+fallisce (token scaduto/revocato/non valido), il frontend pulisce lo stato
+autenticato e reindirizza a login.
+
+Le operazioni che richiedono il backend continuano a mostrare l'errore di rete
+se l'app è offline; non vengono considerate riuscite dalla cache PWA.

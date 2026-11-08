@@ -4,9 +4,16 @@ const { HttpStatus, httpError } = require('../http/http-errors');
 
 const accessTokenTtl = process.env.HACKHUB_ACCESS_TOKEN_TTL || '15m';
 const refreshTokenTtlSeconds = Number(process.env.HACKHUB_REFRESH_TOKEN_TTL_SECONDS || 7 * 24 * 60 * 60);
-const secret = process.env.HACKHUB_JWT_SECRET;
-if (!secret || secret.length < 32) {
+const configuredSecret = process.env.HACKHUB_JWT_SECRET;
+if (configuredSecret && configuredSecret.length < 32) {
   throw new Error('HACKHUB_JWT_SECRET deve contenere almeno 32 caratteri.');
+}
+if (process.env.NODE_ENV === 'production' && !configuredSecret) {
+  throw new Error('In produzione HACKHUB_JWT_SECRET deve contenere almeno 32 caratteri.');
+}
+const secret = configuredSecret || randomBytes(32).toString('base64url');
+if (!configuredSecret) {
+  console.warn('HACKHUB_JWT_SECRET non configurata: uso una chiave casuale temporanea per lo sviluppo.');
 }
 
 const issuer = process.env.HACKHUB_JWT_ISSUER || 'hackhub-api';
