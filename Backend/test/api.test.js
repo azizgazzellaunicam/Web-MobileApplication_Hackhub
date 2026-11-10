@@ -14,9 +14,12 @@ process.env.HACKHUB_DEMO_JUDGE_PASSWORD = 'test-judge-demo-password-2026';
 process.env.HACKHUB_DEMO_MENTOR_PASSWORD = 'test-mentor-demo-password-2026';
 process.env.HACKHUB_DB_PATH = databasePath;
 process.env.HACKHUB_JWT_SECRET = 'test-secret-that-is-at-least-32-characters-long';
+process.env.HACKHUB_ACCESS_TOKEN_TTL = '2h';
+process.env.HACKHUB_REFRESH_TOKEN_TTL_SECONDS = '3600';
 const { app, database } = require('../src/app');
 let server;
 let baseUrl;
+let databaseClosed = false;
 
 test.before(() => {
   server = app.listen(0);
@@ -25,7 +28,7 @@ test.before(() => {
 
 test.after(() => {
   server.close();
-  database.close();
+  if (!databaseClosed) database.close();
   for (const suffix of ['', '-shm', '-wal']) {
     const file = `${databasePath}${suffix}`;
     if (fs.existsSync(file)) fs.unlinkSync(file);
@@ -58,8 +61,8 @@ async function login(email, password = 'password') {
   assert.equal(Object.hasOwn(result.body, 'token'), false);
   assert.equal(Object.hasOwn(result.body, 'accessToken'), false);
   const cookie = result.response.headers.get('set-cookie');
-  assert.match(cookie, /hackhub_access=[^;]+; Max-Age=900; Path=\/; HttpOnly; SameSite=Lax/);
-  assert.match(cookie, /hackhub_refresh=[^;]+; Max-Age=604800; Path=\/api\/auth; HttpOnly; SameSite=Lax/);
+  assert.match(cookie, /hackhub_access=[^;]+; Max-Age=7200; Path=\/; HttpOnly; SameSite=Lax/);
+  assert.match(cookie, /hackhub_refresh=[^;]+; Max-Age=3600; Path=\/api\/auth; HttpOnly; SameSite=Lax/);
   return { access: accessCookie(cookie), refresh: refreshCookie(cookie) };
 }
 
@@ -95,11 +98,37 @@ test('logs in, refreshes with rotation, and revokes on logout', async () => {
     headers: { cookie: `hackhub_refresh=${rotated}` },
   });
   assert.equal(logout.response.status, 204);
+  const clearedCookies = logout.response.headers.get('set-cookie');
+  assert.match(clearedCookies, /hackhub_access=; Max-Age=0; Path=\/; HttpOnly; SameSite=Lax/);
+  assert.match(clearedCookies, /hackhub_refresh=; Max-Age=0; Path=\/api\/auth; HttpOnly; SameSite=Lax/);
   const loggedOut = await request('/api/auth/refresh', {
     method: 'POST',
     headers: { cookie: `hackhub_refresh=${rotated}` },
   });
   assert.equal(loggedOut.response.status, 401);
+});
+
+test('allows only one concurrent rotation and keeps replay detection strict', async () => {
+  const tokens = await login('mario@hackhub.it', 'test-user-demo-password-2026');
+  const attempts = await Promise.all([
+    request('/api/auth/refresh', {
+      method: 'POST',
+      headers: { cookie: `hackhub_refresh=${tokens.refresh}` },
+    }),
+    request('/api/auth/refresh', {
+      method: 'POST',
+      headers: { cookie: `hackhub_refresh=${tokens.refresh}` },
+    }),
+  ]);
+  assert.deepEqual(attempts.map(({ response }) => response.status).sort(), [200, 401]);
+
+  const successfulRefresh = attempts.find(({ response }) => response.status === 200);
+  const rotated = refreshCookie(successfulRefresh.response.headers.get('set-cookie'));
+  const replay = await request('/api/auth/refresh', {
+    method: 'POST',
+    headers: { cookie: `hackhub_refresh=${rotated}` },
+  });
+  assert.equal(replay.response.status, 401);
 });
 
 test('rejects expired JWT and invalid signature, issuer, and audience', async () => {
@@ -151,4 +180,16 @@ test('protects submission evaluation from non-judges', async () => {
   });
   assert.equal(response.status, 403);
   assert.equal(body.status, 403);
+});
+
+test('health reports database availability without exposing internal errors', async () => {
+  const healthy = await request('/health');
+  assert.equal(healthy.response.status, 200);
+  assert.deepEqual(healthy.body, { status: 'ok' });
+
+  database.close();
+  databaseClosed = true;
+  const unavailable = await request('/health');
+  assert.equal(unavailable.response.status, 503);
+  assert.deepEqual(unavailable.body, { status: 'unavailable' });
 });

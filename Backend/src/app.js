@@ -91,7 +91,14 @@ function hackathon(row) {
 const app = express();
 app.use(express.json({ limit: '20kb' }));
 
-app.get('/health', (_req, res) => res.json({ status: 'ok' }));
+app.get('/health', (_req, res) => {
+  try {
+    database.prepare('SELECT 1').get();
+    res.json({ status: 'ok' });
+  } catch {
+    res.status(503).json({ status: 'unavailable' });
+  }
+});
 registerTeamRoutes({ app, auth, role, teamService });
 registerCompetitionRoutes({
   app,

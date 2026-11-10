@@ -1,4 +1,5 @@
 const { HttpStatus, httpError } = require('../http/http-errors');
+const { accessTokenTtlSeconds, refreshTokenTtlSeconds } = require('../security/jwt');
 
 function registerApiRoutes({
   app,
@@ -13,25 +14,22 @@ function registerApiRoutes({
   competitionService,
   hackathon,
 }) {
-  const cookie = (res, name, token, maxAge, path = '/') => {
+  const cookie = (name, token, maxAge, path) => {
     const attributes = [`${name}=${token}`, `Max-Age=${maxAge}`, `Path=${path}`, 'HttpOnly', 'SameSite=Lax'];
     if (process.env.NODE_ENV === 'production') attributes.push('Secure');
-    res.setHeader('Set-Cookie', attributes.join('; '));
+    return attributes.join('; ');
   };
   const clearCookies = (res) => {
     res.setHeader('Set-Cookie', [
-      'hackhub_access=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax',
-      'hackhub_refresh=; Max-Age=0; Path=/api/auth; HttpOnly; SameSite=Lax',
+      cookie('hackhub_access', '', 0, '/'),
+      cookie('hackhub_refresh', '', 0, '/api/auth'),
     ]);
   };
   const authResponse = (res, response) => {
-    const accessCookie = [`hackhub_access=${response.accessToken}`, 'Max-Age=900', 'Path=/', 'HttpOnly', 'SameSite=Lax'];
-    const refreshCookie = [`hackhub_refresh=${response.refreshToken}`, 'Max-Age=604800', 'Path=/api/auth', 'HttpOnly', 'SameSite=Lax'];
-    if (process.env.NODE_ENV === 'production') {
-      accessCookie.push('Secure');
-      refreshCookie.push('Secure');
-    }
-    res.setHeader('Set-Cookie', [accessCookie.join('; '), refreshCookie.join('; ')]);
+    res.setHeader('Set-Cookie', [
+      cookie('hackhub_access', response.accessToken, accessTokenTtlSeconds, '/'),
+      cookie('hackhub_refresh', response.refreshToken, refreshTokenTtlSeconds, '/api/auth'),
+    ]);
     const { accessToken, refreshToken, ...publicResponse } = response;
     res.json(publicResponse);
   };

@@ -1,6 +1,6 @@
 import { inject, Injectable, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable, catchError, finalize, map, of, shareReplay, tap } from 'rxjs';
+import { Observable, catchError, finalize, firstValueFrom, from, map, of, shareReplay, tap } from 'rxjs';
 import { environment } from '../../../environments/environment';
 
 export interface AuthResponse {
@@ -58,17 +58,25 @@ export class Auth {
 
   public refreshSession(): Observable<boolean> {
     if (!this.refreshInFlight$) {
-      this.refreshInFlight$ = this.http
-        .post<AuthResponse>(`${environment.apiUrl}/auth/refresh`, {}, { withCredentials: true })
-        .pipe(
-          tap((response) => this.saveSession(response)),
-          map(() => true),
-          catchError(() => of(false)),
-          finalize(() => { this.refreshInFlight$ = null; }),
-          shareReplay({ bufferSize: 1, refCount: false }),
-        );
+      this.refreshInFlight$ = this.refreshAcrossTabs().pipe(
+        finalize(() => { this.refreshInFlight$ = null; }),
+        shareReplay({ bufferSize: 1, refCount: false }),
+      );
     }
     return this.refreshInFlight$;
+  }
+
+  private refreshAcrossTabs(): Observable<boolean> {
+    const refresh = () => this.http
+      .post<AuthResponse>(`${environment.apiUrl}/auth/refresh`, {}, { withCredentials: true })
+      .pipe(
+        tap((response) => this.saveSession(response)),
+        map(() => true),
+        catchError(() => of(false)),
+      );
+
+    if (typeof navigator === 'undefined' || !navigator.locks) return refresh();
+    return from(navigator.locks.request('hackhub-auth-refresh', () => firstValueFrom(refresh())));
   }
 
   public clearSession(): void {

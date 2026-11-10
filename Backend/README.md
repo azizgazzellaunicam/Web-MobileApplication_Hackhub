@@ -37,7 +37,10 @@ Il codice si trova nella cartella `src`:
 - `adapter`: integrazioni simulate per pagamenti e calendario;
 - `strategy`: logiche specifiche, come la selezione del vincitore.
 
-Il database predefinito è `hackhub.sqlite`.
+Il database predefinito è `hackhub.sqlite` nella cartella `Backend`.
+`HACKHUB_DB_PATH` accetta percorsi assoluti o relativi a `Backend`; le
+directory mancanti vengono create automaticamente. Il valore `:memory:` apre
+un database temporaneo in memoria senza creare file o directory.
 
 ## Avvio
 
@@ -48,7 +51,8 @@ npm install
 npm start
 ```
 
-Il server viene avviato sulla porta `3000`.
+Il server viene avviato sulla porta `3000`. `GET /health` verifica anche che
+SQLite sia utilizzabile e risponde `503` quando il database non è disponibile.
 
 Il frontend Angular utilizza il proxy di sviluppo per inoltrare le richieste
 `/api` al backend.
@@ -135,19 +139,27 @@ Le principali variabili d'ambiente sono:
 - `HACKHUB_ACCESS_TOKEN_TTL`: durata del JWT access token, predefinita a `15m`;
 - `HACKHUB_REFRESH_TOKEN_TTL_SECONDS`: durata del refresh token in secondi,
   predefinita a `604800` (7 giorni).
+- `HACKHUB_JWT_ISSUER`: issuer del JWT, predefinito `hackhub-api`;
+- `HACKHUB_JWT_AUDIENCE`: audience del JWT, predefinito `hackhub-web`;
+- `NODE_ENV=production`: abilita il flag `Secure` dei cookie auth e richiede
+  un secret JWT esplicito.
 
-In sviluppo, se `HACKHUB_JWT_SECRET` non è impostata, il backend genera una
-chiave casuale temporanea e la stampa come avviso. I token diventano invalidi
-al riavvio del processo. Per mantenere le sessioni, impostare comunque una
-chiave persistente, ad esempio in PowerShell:
+I TTL sono validati all'avvio; il backend rifiuta valori vuoti, non validi o
+non positivi. Il `Max-Age` dei cookie segue i TTL effettivamente configurati.
+In development/test, se `HACKHUB_JWT_SECRET` non è impostata, il backend genera
+una chiave casuale temporanea (solo in development viene stampato un avviso).
+I token diventano invalidi al riavvio del processo. Per mantenere le sessioni,
+impostare una chiave persistente, ad esempio in PowerShell:
 
 ```powershell
 $env:HACKHUB_JWT_SECRET = 'inserire-una-chiave-casuale-di-almeno-32-caratteri'
 npm start
 ```
-- `HACKHUB_JWT_ISSUER`: issuer del JWT, predefinito `hackhub-api`;
-- `HACKHUB_JWT_AUDIENCE`: audience del JWT, predefinito `hackhub-web`;
-- `NODE_ENV=production`: abilita il flag `Secure` dei cookie auth.
+
+Con `NODE_ENV=production` il seed demo non viene eseguito e il backend rifiuta
+l'avvio se rileva account demo nel database. Impostare `HACKHUB_DB_PATH` su un
+percorso persistente e servire l'applicazione in HTTPS per mantenere i dati e
+inviare i cookie `Secure`.
 
 ## Test
 

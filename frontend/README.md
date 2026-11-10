@@ -21,6 +21,9 @@ L'applicazione permette di:
 - RxJS
 - Vitest
 
+Per installazione, test e build usare Node.js `^22.22.3`, `^24.15.0` o
+`>=26.0.0`, come richiesto dalle dipendenze Angular 22.
+
 ## Struttura
 
 Il codice dell'applicazione si trova in `src/app` ed è organizzato per aree:
@@ -115,9 +118,11 @@ Angular invia le richieste con `withCredentials`, ripristina la sessione
 all'avvio tramite `/api/auth/profile` e, in caso di `401`, esegue il rinnovo
 automatico con `/api/auth/refresh`.
 
-L'interceptor coordina le richieste simultanee: quando più chiamate ricevono
-`401`, viene eseguito un solo refresh in-flight e le richieste originali
-vengono ritentate dopo il rinnovo riuscito.
+L'interceptor coordina le richieste simultanee nella scheda con un solo refresh
+in-flight e, quando supportata dal browser, usa Web Locks per serializzare i
+rinnovi anche tra schede della stessa origine. Le richieste originali vengono
+ritentate dopo il rinnovo riuscito. Il backend continua a revocare la famiglia
+in caso di riutilizzo effettivo di un refresh token già ruotato.
 
 I token non vengono salvati in `localStorage` o `sessionStorage`. Se il refresh
 fallisce (token scaduto/revocato/non valido), il frontend pulisce lo stato

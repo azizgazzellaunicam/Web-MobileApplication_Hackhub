@@ -15,9 +15,13 @@ o `sessionStorage`.
 
 ## Requisiti
 
-- Node.js con supporto a `node:sqlite`;
+- Node.js `^22.22.3`, `^24.15.0` o `>=26.0.0` (Node 22.22.3 è il riferimento
+  per l'ambiente di deployment);
 - npm;
 - un browser con supporto ai service worker per installare la PWA.
+
+Il frontend richiede uno dei runtime Node supportati da Angular 22 indicati
+sopra; il backend usa `node:sqlite`.
 
 ## Avvio
 
@@ -39,6 +43,27 @@ npm start
 
 L'applicazione è disponibile su `http://localhost:4200`; il proxy Angular
 inoltra `/api` al backend sulla porta `3000`.
+
+## Database e autenticazione
+
+Il backend usa SQLite e conserva il database in `Backend/hackhub.sqlite` per
+impostazione predefinita. `HACKHUB_DB_PATH` consente di specificare un percorso
+assoluto o relativo alla cartella `Backend`; le directory mancanti vengono
+create automaticamente. In un deployment persistente, configurare il percorso
+del volume, ad esempio `/app/data/hackhub.sqlite`.
+
+In development/test il seed demo è abilitato per impostazione predefinita e può
+essere disabilitato con `HACKHUB_SEED_DEMO=false`. In production non viene
+eseguito e il backend rifiuta l'avvio senza `HACKHUB_JWT_SECRET` (almeno 32
+caratteri) o se il database contiene account demo.
+
+Variabili JWT: `HACKHUB_JWT_SECRET`, `HACKHUB_ACCESS_TOKEN_TTL` (predefinito
+`15m`), `HACKHUB_REFRESH_TOKEN_TTL_SECONDS` (predefinito `604800`),
+`HACKHUB_JWT_ISSUER` (predefinito `hackhub-api`) e
+`HACKHUB_JWT_AUDIENCE` (predefinito `hackhub-web`). I TTL vengono validati
+all'avvio. Il browser riceve token solo tramite cookie `HttpOnly`; in
+production i cookie sono `Secure`. Le API e i dati autenticati non vengono
+memorizzati offline dal service worker.
 
 ## Build PWA
 
