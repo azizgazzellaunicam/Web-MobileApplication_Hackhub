@@ -1,0 +1,17 @@
+node_modules
+**/node_modules
+coverage
+**/coverage
+test-results
+tmp
+temp
+*.tmp
+*.log
+npm-debug.log*
+.git
+.env
+.env.*
+*.sqlite
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm

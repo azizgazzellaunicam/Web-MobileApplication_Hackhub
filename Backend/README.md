@@ -161,6 +161,27 @@ l'avvio se rileva account demo nel database. Impostare `HACKHUB_DB_PATH` su un
 percorso persistente e servire l'applicazione in HTTPS per mantenere i dati e
 inviare i cookie `Secure`.
 
+## Container Docker
+
+Dalla root del repository, copia `.env.example` in `.env` e valorizza
+`HACKHUB_JWT_SECRET` con una chiave casuale di almeno 32 caratteri. Il Compose
+root carica `.env` per le variabili interpolate; il secret non ha un valore di
+default e `.env` è escluso da Git e dai contesti Docker.
+
+```powershell
+Copy-Item .env.example .env
+node -e "console.log(require('node:crypto').randomBytes(48).toString('base64url'))"
+```
+
+Il servizio backend è costruito da `Backend/Dockerfile` su Node
+`22.22.3-bookworm-slim`, esegue `npm ci --omit=dev` e avvia `npm start` in
+`NODE_ENV=production`. La porta `3000` è esposta solo alla rete Compose, non
+pubblicata sull'host. `HACKHUB_DB_PATH=/app/data/hackhub.sqlite` punta al volume
+nominato `hackhub_data`; database e file SQLite WAL/SHM sopravvivono a stop,
+ricreazione e rebuild dei container. Nginx inoltra `/api/` e `/health` dal
+frontend. I comandi per avviare, controllare e fermare l'intero stack sono
+documentati nel [README principale](../README.md#avvio-locale-con-docker-compose).
+
 ## Test
 
 ```bash

@@ -88,3 +88,43 @@ npm test
 
 I test backend includono autenticazione JWT, refresh token con rotazione e
 revoca, autorizzazioni per ruolo, API protette e configurazione PWA.
+
+## Avvio locale con Docker Compose
+
+Prerequisiti: Docker Desktop aggiornato, con Docker Compose v2 abilitato.
+Compose costruisce un'immagine per il backend e una per il frontend; i
+container sono le istanze in esecuzione. Nginx serve Angular e inoltra `/api/`
+e `/health` a Express sulla rete bridge dedicata. Solo Nginx pubblica la porta
+HTTP sull'host; la porta `3000` del backend resta interna alla rete Docker.
+
+Prima dell'avvio, crea il file `.env` dalla cartella principale del repository:
+
+```powershell
+Copy-Item .env.example .env
+node -e "console.log(require('node:crypto').randomBytes(48).toString('base64url'))"
+```
+
+Inserisci il valore generato in `HACKHUB_JWT_SECRET` nel file `.env`. Il file
+non viene versionato. Se la porta 80 è già occupata, imposta `FRONTEND_PORT`
+nel file `.env` (per esempio `8080`).
+
+Costruisci le immagini e avvia l'intero stack in background:
+
+```bash
+docker compose up --build -d
+```
+
+Apri `http://localhost` (o la porta scelta in `FRONTEND_PORT`). Comandi utili:
+
+```bash
+docker compose ps
+docker compose logs -f
+docker compose down
+```
+
+Compose attende che il backend superi il proprio health check SQLite prima di
+avviare il frontend. Il database, inclusi eventuali file SQLite WAL/SHM, è
+contenuto nel volume nominato `hackhub_data` montato in `/app/data`; i dati
+sopravvivono all'arresto, alla ricreazione dei container e al rebuild delle
+immagini. `docker compose down` conserva il volume; non usare `docker compose down -v`
+se vuoi mantenere i dati.

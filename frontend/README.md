@@ -82,6 +82,29 @@ npm test
 
 La build viene generata nella cartella `dist/Hackhub`.
 
+## Container Docker
+
+La configurazione Docker Compose si trova nella root del repository. Il
+multi-stage build in `frontend/Dockerfile` esegue `npm ci` e
+`npm run build -- --configuration production` con Node `22.22.3`, poi copia
+solo `dist/Hackhub/browser` in un'immagine Nginx Alpine. La configurazione
+`frontend/nginx.conf` serve Angular, applica il fallback SPA su `index.html` e
+inoltra `/api/` e `/health` al servizio Compose `backend:3000`. Il browser usa
+solo l'origine Nginx; il backend non è pubblicato sull'host e non serve CORS.
+
+Dalla root del repository, crea `.env` da `.env.example` e valorizza
+`HACKHUB_JWT_SECRET` prima di avviare Compose:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Poi dalla root esegui `docker compose up --build -d` e apri
+`http://localhost`. Compose pubblica solo la porta HTTP del frontend
+(configurabile tramite `FRONTEND_PORT`) e attende l'health check del backend.
+I comandi Compose completi e i dettagli sulla persistenza SQLite sono nel
+[README principale](../README.md#avvio-locale-con-docker-compose).
+
 ## PWA
 
 HackHub usa il supporto ufficiale Angular PWA tramite
