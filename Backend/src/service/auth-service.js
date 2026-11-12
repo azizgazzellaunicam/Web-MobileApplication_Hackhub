@@ -10,7 +10,7 @@ class AuthService {
     this.verifyPassword = verifyPassword;
   }
 
-  register(input) {
+  async register(input) {
     const email = String(input?.email || '').trim().toLowerCase();
     const password = String(input?.password || '');
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || password.length < 8) {
@@ -19,39 +19,39 @@ class AuthService {
     const name = typeof input?.name === 'string' && input.name.trim()
       ? input.name.trim()
       : email.split('@')[0];
-    const result = this.userRepository.create(name, email, this.hashPassword(password));
+    const result = await this.userRepository.create(name, email, this.hashPassword(password));
     return this.createSession(result.lastInsertRowid);
   }
 
-  login(input) {
-    const user = this.userRepository.findByEmail(String(input?.email || '').trim().toLowerCase());
+  async login(input) {
+    const user = await this.userRepository.findByEmail(String(input?.email || '').trim().toLowerCase());
     if (!user || !this.verifyPassword(String(input?.password || ''), user.password_hash)) {
       throw httpError(HttpStatus.UNAUTHORIZED, 'Email o password non corrette.');
     }
     return this.createSession(user.id);
   }
 
-  logout(token) {
-    this.refreshTokenRepository.revoke(token);
+  async logout(token) {
+    await this.refreshTokenRepository.revoke(token);
   }
 
-  updateProfile(userId, input) {
+  async updateProfile(userId, input) {
     const name = typeof input?.name === 'string' ? input.name.trim() : '';
     const email = typeof input?.email === 'string' ? input.email.trim().toLowerCase() : '';
     if (!name || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       throw httpError(HttpStatus.BAD_REQUEST, 'Nome o email non validi.');
     }
-    if (this.userRepository.findByEmailExcept(email, userId)) {
+    if (await this.userRepository.findByEmailExcept(email, userId)) {
       throw httpError(HttpStatus.CONFLICT, 'Email già utilizzata.');
     }
     return this.userRepository.updateProfile(userId, name, email);
   }
 
-  createSession(userId) {
-    const user = this.userRepository.findById(userId);
+  async createSession(userId) {
+    const user = await this.userRepository.findById(userId);
     if (!user) throw httpError(HttpStatus.INTERNAL_SERVER_ERROR, 'Utente non trovato.');
     const refreshToken = createRefreshToken();
-    this.refreshTokenRepository.save(
+    await this.refreshTokenRepository.save(
       refreshToken,
       user.id,
       Date.now() + refreshTokenTtlSeconds * 1000,
@@ -66,28 +66,28 @@ class AuthService {
     };
   }
 
-  refresh(token) {
-    const current = this.refreshTokenRepository.find(token);
+  async refresh(token) {
+    const current = await this.refreshTokenRepository.find(token);
     if (!current) throw httpError(HttpStatus.UNAUTHORIZED, 'Refresh token non valido.');
     if (current.revoked_at) {
-      this.refreshTokenRepository.revokeFamily(current.family_id);
+      await this.refreshTokenRepository.revokeFamily(current.family_id);
       throw httpError(HttpStatus.UNAUTHORIZED, 'Refresh token riutilizzato.');
     }
-    const user = this.userRepository.findById(current.user_id);
+    const user = await this.userRepository.findById(current.user_id);
     if (!user || current.expires_at <= Date.now()) {
-      this.refreshTokenRepository.revoke(token);
+      await this.refreshTokenRepository.revoke(token);
       throw httpError(HttpStatus.UNAUTHORIZED, 'Refresh token scaduto.');
     }
     const replacement = createRefreshToken();
-    if (!this.refreshTokenRepository.rotate(
+    if (!await this.refreshTokenRepository.rotate(
       token,
       replacement,
       user.id,
       Date.now() + refreshTokenTtlSeconds * 1000,
       current.family_id,
     )) {
-      const latest = this.refreshTokenRepository.find(token);
-      if (latest?.revoked_at) this.refreshTokenRepository.revokeFamily(latest.family_id);
+      const latest = await this.refreshTokenRepository.find(token);
+      if (latest?.revoked_at) await this.refreshTokenRepository.revokeFamily(latest.family_id);
       throw httpError(HttpStatus.UNAUTHORIZED, 'Refresh token non valido.');
     }
     return {

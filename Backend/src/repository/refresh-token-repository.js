@@ -1,68 +1,68 @@
 const { createHash } = require('node:crypto');
+const { BaseRepository } = require('./base-repository');
 
 function hashToken(token) {
   return createHash('sha256').update(token).digest('hex');
 }
 
-class RefreshTokenRepository {
-  constructor(database) {
-    this.database = database;
-  }
-
-  save(token, userId, expiresAt, familyId) {
-    this.database.prepare(`
+class RefreshTokenRepository extends BaseRepository {
+  async save(token, userId, expiresAt, familyId) {
+    await this.run(`
       INSERT INTO refresh_tokens(user_id, token_hash, expires_at, family_id)
       VALUES(?,?,?,?)
-    `).run(userId, hashToken(token), expiresAt, familyId);
+    `, [userId, hashToken(token), expiresAt, familyId]);
   }
 
-  find(token) {
+  async find(token) {
     if (!token) return null;
-    return this.database.prepare(`
+    return this.one(`
       SELECT id, user_id, token_hash, expires_at, created_at, revoked_at, family_id, replaced_by
       FROM refresh_tokens WHERE token_hash=?
-    `).get(hashToken(token));
+    `, [hashToken(token)]);
   }
 
-  rotate(token, replacement, userId, expiresAt, familyId) {
-    this.database.exec('BEGIN IMMEDIATE');
-    try {
-      const current = this.find(token);
+  async rotate(token, replacement, userId, expiresAt, familyId) {
+    if (!token) return null;
+    const tokenHash = hashToken(token);
+    return this.transaction(async (repository) => {
+      const current = await repository.one(`
+        SELECT id, user_id, token_hash, expires_at, created_at, revoked_at, family_id, replaced_by
+        FROM refresh_tokens
+        WHERE token_hash=?
+        FOR UPDATE
+      `, [tokenHash]);
       if (!current || current.user_id !== userId || current.revoked_at || current.expires_at <= Date.now()) {
-        this.database.exec('ROLLBACK');
         return null;
       }
-      this.save(replacement, userId, expiresAt, familyId);
-      const replacementId = this.database.prepare(
-        'SELECT id FROM refresh_tokens WHERE token_hash=?',
-      ).get(hashToken(replacement)).id;
-      this.database.prepare(
+      await repository.save(replacement, userId, expiresAt, familyId);
+      const replacementToken = await repository.one('SELECT id FROM refresh_tokens WHERE token_hash=?', [hashToken(replacement)]);
+      await repository.run(
         'UPDATE refresh_tokens SET revoked_at=?, replaced_by=? WHERE id=? AND revoked_at IS NULL',
-      ).run(Date.now(), replacementId, current.id);
-      this.database.exec('COMMIT');
+        [Date.now(), replacementToken.id, current.id],
+      );
       return current;
-    } catch (error) {
-      this.database.exec('ROLLBACK');
-      throw error;
-    }
+    });
   }
 
-  revoke(token) {
-    if (token) this.database.prepare(
+  async revoke(token) {
+    if (token) await this.run(
       'UPDATE refresh_tokens SET revoked_at=COALESCE(revoked_at,?) WHERE token_hash=?',
-    ).run(Date.now(), hashToken(token));
+      [Date.now(), hashToken(token)],
+    );
   }
 
-  revokeFamily(familyId) {
-    this.database.prepare(
+  async revokeFamily(familyId) {
+    await this.run(
       'UPDATE refresh_tokens SET revoked_at=COALESCE(revoked_at,?) WHERE family_id=?',
-    ).run(Date.now(), familyId);
+      [Date.now(), familyId],
+    );
   }
 
-  cleanup(now = Date.now()) {
-    this.database.prepare(
+  async cleanup(now = Date.now()) {
+    await this.run(
       'DELETE FROM refresh_tokens WHERE expires_at < ? OR revoked_at IS NOT NULL',
-    ).run(now);
+      [now],
+    );
   }
 }
 

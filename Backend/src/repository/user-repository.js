@@ -1,39 +1,36 @@
-class UserRepository {
-  constructor(database) {
-    this.database = database;
+const { BaseRepository } = require('./base-repository');
+
+class UserRepository extends BaseRepository {
+  async findByEmail(email) {
+    return this.one('SELECT id,name,email,role,password_hash FROM users WHERE email=?', [email]);
   }
 
-  findByEmail(email) {
-    return this.database.prepare('SELECT id,name,email,role,password_hash FROM users WHERE email=?').get(email);
+  async findById(id) {
+    return this.one('SELECT id,name,email,role FROM users WHERE id=?', [id]);
   }
 
-  findById(id) {
-    return this.database.prepare('SELECT id,name,email,role FROM users WHERE id=?').get(id);
+  async create(name, email, passwordHash) {
+    return this.run('INSERT INTO users(name,email,password_hash) VALUES (?,?,?)', [name, email, passwordHash]);
   }
 
-  create(name, email, passwordHash) {
-    return this.database.prepare('INSERT INTO users(name,email,password_hash) VALUES (?,?,?)')
-      .run(name, email, passwordHash);
+  async findByEmailExcept(email, userId) {
+    return this.one('SELECT 1 FROM users WHERE email=? AND id<>?', [email, userId]);
   }
 
-  findByEmailExcept(email, userId) {
-    return this.database.prepare('SELECT 1 FROM users WHERE email=? AND id<>?').get(email, userId);
-  }
-
-  updateProfile(userId, name, email) {
-    this.database.prepare('UPDATE users SET name=?,email=? WHERE id=?').run(name, email, userId);
+  async updateProfile(userId, name, email) {
+    await this.run('UPDATE users SET name=?,email=? WHERE id=?', [name, email, userId]);
     return this.findById(userId);
   }
 
-  findWins(userId) {
-    const team = this.database.prepare('SELECT team_id FROM team_members WHERE user_id=?').get(userId);
+  async findWins(userId) {
+    const team = await this.one('SELECT team_id FROM team_members WHERE user_id=?', [userId]);
     if (!team) return [];
-    return this.database.prepare(`
+    return this.all(`
       SELECT h.id, h.name, h.winner_team_id, h.prize
       FROM hackathons h
       WHERE h.winner_team_id=?
       ORDER BY h.end_date DESC
-    `).all(team.team_id);
+    `, [team.team_id]);
   }
 }
 

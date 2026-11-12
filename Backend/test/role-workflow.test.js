@@ -1,35 +1,33 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
-
-const databasePath = path.join(os.tmpdir(), `hackhub-role-workflow-${process.pid}-${Date.now()}.sqlite`);
+const { applyDefaultDatabaseEnvironment, createInitializedDatabase, resetDatabase } = require('./helpers/mariadb-test-utils');
 process.env.NODE_ENV = 'test';
 process.env.HACKHUB_SEED_DEMO = 'true';
 process.env.HACKHUB_DEMO_USER_PASSWORD = 'test-user-demo-password-2026';
 process.env.HACKHUB_DEMO_ORGANIZER_PASSWORD = 'test-organizer-demo-password-2026';
 process.env.HACKHUB_DEMO_JUDGE_PASSWORD = 'test-judge-demo-password-2026';
 process.env.HACKHUB_DEMO_MENTOR_PASSWORD = 'test-mentor-demo-password-2026';
-process.env.HACKHUB_DB_PATH = databasePath;
 process.env.HACKHUB_JWT_SECRET = 'test-secret-that-is-at-least-32-characters-long';
+applyDefaultDatabaseEnvironment();
 
-const { app, database } = require('../src/app');
+const { createApp } = require('../src/app');
 let server;
 let baseUrl;
+let database;
 
-test.before(() => {
-  server = app.listen(0);
+test.before(async () => {
+  const resetConnection = await createInitializedDatabase();
+  await resetDatabase(resetConnection);
+  await resetConnection.end();
+  const initialized = await createApp();
+  database = initialized.database;
+  server = initialized.app.listen(0);
   baseUrl = `http://127.0.0.1:${server.address().port}`;
 });
 
-test.after(() => {
+test.after(async () => {
   server.close();
-  database.close();
-  for (const suffix of ['', '-shm', '-wal']) {
-    const file = `${databasePath}${suffix}`;
-    if (fs.existsSync(file)) fs.unlinkSync(file);
-  }
+  await database.end();
 });
 
 async function request(url, options = {}) {
@@ -165,8 +163,8 @@ test('participants can join a team by invitation and manage their notifications'
   assert.equal(leftTeam.response.status, 200);
   const soloTeams = await request('/api/teams', asUser(soloToken));
   assert.deepEqual(soloTeams.body, []);
-  const persistedSoloTeam = database.prepare('SELECT 1 FROM teams WHERE id=?').get(createdTeam.body.id);
-  assert.equal(persistedSoloTeam, undefined);
+  const [persistedSoloTeam] = await database.execute('SELECT 1 FROM teams WHERE id=?', [createdTeam.body.id]);
+  assert.equal(persistedSoloTeam[0], undefined);
 });
 
 test('organizer, participant, judge, and mentor complete an event workflow', async () => {
@@ -181,9 +179,11 @@ test('organizer, participant, judge, and mentor complete an event workflow', asy
   assert.equal(created.response.status, 201);
   const hackathonId = created.body.id;
 
-  const secondJudgeId = database.prepare(
+  const [secondJudgeResult] = await database.execute(
     'INSERT INTO users(name,email,password_hash,role) VALUES(?,?,?,?)',
-  ).run('Workflow Secondary Judge', `judge-${Date.now()}@example.test`, 'unused-test-hash', 'JUDGE').lastInsertRowid;
+    ['Workflow Secondary Judge', `judge-${Date.now()}@example.test`, 'unused-test-hash', 'JUDGE'],
+  );
+  const secondJudgeId = secondJudgeResult.insertId;
   const assignment = await request(`/api/hackathons/${hackathonId}/staff`, asUser(organizerToken, {
     method: 'POST',
     body: JSON.stringify({ userId: secondJudgeId, role: 'JUDGE' }),
@@ -201,9 +201,9 @@ test('organizer, participant, judge, and mentor complete an event workflow', asy
   }));
   assert.equal(updated.response.status, 200);
   assert.match(updated.body.name, /aggiornato/);
-  const judgeAssignmentsAfterUpdate = database.prepare(`
+  const [judgeAssignmentsAfterUpdate] = await database.execute(`
     SELECT user_id FROM hackathon_staff WHERE hackathon_id=? AND role='JUDGE' ORDER BY user_id
-  `).all(hackathonId);
+  `, [hackathonId]);
   assert.ok(judgeAssignmentsAfterUpdate.some((assignment) => assignment.user_id === secondJudgeId));
   assert.ok(judgeAssignmentsAfterUpdate.length >= 2);
 

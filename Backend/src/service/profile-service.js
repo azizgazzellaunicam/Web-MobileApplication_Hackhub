@@ -3,7 +3,7 @@ class ProfileService {
     this.userRepository = userRepository;
   }
 
-  wins(userId) {
+  async wins(userId) {
     return this.userRepository.findWins(userId);
   }
 }

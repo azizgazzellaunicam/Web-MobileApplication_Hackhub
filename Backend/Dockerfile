@@ -6,11 +6,9 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 
 COPY src ./src
+COPY scripts ./scripts
 
 ENV NODE_ENV=production
-ENV HACKHUB_DB_PATH=/app/data/hackhub.sqlite
-
-RUN mkdir -p /app/data && chown node:node /app/data
 USER node
 
 EXPOSE 3000

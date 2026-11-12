@@ -1,16 +1,15 @@
-function validateStartupConfiguration({ runtimeEnvironment, repository }) {
+async function validateStartupConfiguration({ runtimeEnvironment, database }) {
   if (runtimeEnvironment === 'production' && process.env.HACKHUB_SEED_DEMO === 'true') {
     throw new Error('HACKHUB_SEED_DEMO non può essere abilitato in produzione.');
   }
   if (runtimeEnvironment === 'production') {
-    const demoAccount = repository.prepare(`
-      SELECT 1 FROM users
-      WHERE email IN (
-        'mario@hackhub.it', 'admin@hackhub.it', 'giudice@hackhub.it', 'mentore@hackhub.it'
-      )
+    const [demoAccount] = await database.execute(`
+      SELECT 1 AS found
+      FROM users
+      WHERE email IN (?, ?, ?, ?)
       LIMIT 1
-    `).get();
-    if (demoAccount) throw new Error('Account demo rilevato nel database di produzione.');
+    `, ['mario@hackhub.it', 'admin@hackhub.it', 'giudice@hackhub.it', 'mentore@hackhub.it']);
+    if (demoAccount.length) throw new Error('Account demo rilevato nel database di produzione.');
   }
   if (process.env.HACKHUB_SEED_DEMO === 'true'
     && !['development', 'test'].includes(runtimeEnvironment)) {
@@ -18,7 +17,7 @@ function validateStartupConfiguration({ runtimeEnvironment, repository }) {
   }
 }
 
-function seedDemoData({ runtimeEnvironment, repository, hashPassword }) {
+async function seedDemoData({ runtimeEnvironment, database, hashPassword }) {
   if (!['development', 'test'].includes(runtimeEnvironment)
     || process.env.HACKHUB_SEED_DEMO === 'false') return;
   const demoPasswords = {
@@ -30,52 +29,113 @@ function seedDemoData({ runtimeEnvironment, repository, hashPassword }) {
   if (Object.values(demoPasswords).some((password) => !password || password.length < 8)) {
     throw new Error('Ogni password demo deve contenere almeno 8 caratteri.');
   }
-  const existingUsers = repository.prepare('SELECT COUNT(*) AS count FROM users').get().count;
+
+  const [existingUsersRows] = await database.execute('SELECT COUNT(*) AS count FROM users');
+  const existingUsers = Number(existingUsersRows[0].count);
   if (existingUsers) {
-    const updateDemoUser = repository.prepare('UPDATE users SET email=?, password_hash=? WHERE email=?');
-    updateDemoUser.run('mario@hackhub.it', hashPassword(demoPasswords.user), 'mario.demo@demo.hackhub.local');
-    updateDemoUser.run('admin@hackhub.it', hashPassword(demoPasswords.organizer), 'admin.demo@demo.hackhub.local');
-    updateDemoUser.run('giudice@hackhub.it', hashPassword(demoPasswords.judge), 'giudice.demo@demo.hackhub.local');
-    updateDemoUser.run('mentore@hackhub.it', hashPassword(demoPasswords.mentor), 'mentore.demo@demo.hackhub.local');
-    updateDemoUser.run('mario@hackhub.it', hashPassword(demoPasswords.user), 'mario@hackhub.it');
-    updateDemoUser.run('admin@hackhub.it', hashPassword(demoPasswords.organizer), 'admin@hackhub.it');
-    updateDemoUser.run('giudice@hackhub.it', hashPassword(demoPasswords.judge), 'giudice@hackhub.it');
-    updateDemoUser.run('mentore@hackhub.it', hashPassword(demoPasswords.mentor), 'mentore@hackhub.it');
+    const updateSql = 'UPDATE users SET email=?, password_hash=? WHERE email=?';
+    await database.execute(updateSql, ['mario@hackhub.it', hashPassword(demoPasswords.user), 'mario.demo@demo.hackhub.local']);
+    await database.execute(updateSql, ['admin@hackhub.it', hashPassword(demoPasswords.organizer), 'admin.demo@demo.hackhub.local']);
+    await database.execute(updateSql, ['giudice@hackhub.it', hashPassword(demoPasswords.judge), 'giudice.demo@demo.hackhub.local']);
+    await database.execute(updateSql, ['mentore@hackhub.it', hashPassword(demoPasswords.mentor), 'mentore.demo@demo.hackhub.local']);
+    await database.execute(updateSql, ['mario@hackhub.it', hashPassword(demoPasswords.user), 'mario@hackhub.it']);
+    await database.execute(updateSql, ['admin@hackhub.it', hashPassword(demoPasswords.organizer), 'admin@hackhub.it']);
+    await database.execute(updateSql, ['giudice@hackhub.it', hashPassword(demoPasswords.judge), 'giudice@hackhub.it']);
+    await database.execute(updateSql, ['mentore@hackhub.it', hashPassword(demoPasswords.mentor), 'mentore@hackhub.it']);
     return;
   }
-  const add = repository.prepare('INSERT INTO users(name,email,password_hash,role) VALUES (?,?,?,?)');
-  add.run('Mario Demo', 'mario@hackhub.it', hashPassword(demoPasswords.user), 'USER');
-  add.run('Admin Demo', 'admin@hackhub.it', hashPassword(demoPasswords.organizer), 'ORGANIZER');
-  add.run('Giudice Demo', 'giudice@hackhub.it', hashPassword(demoPasswords.judge), 'JUDGE');
-  add.run('Mentore Demo', 'mentore@hackhub.it', hashPassword(demoPasswords.mentor), 'MENTOR');
-  const mario = repository.prepare('SELECT id FROM users WHERE email=?').get('mario@hackhub.it').id;
-  const admin = repository.prepare('SELECT id FROM users WHERE email=?').get('admin@hackhub.it').id;
-  const judge = repository.prepare('SELECT id FROM users WHERE email=?').get('giudice@hackhub.it').id;
-  const mentor = repository.prepare('SELECT id FROM users WHERE email=?').get('mentore@hackhub.it').id;
-  const team = repository.prepare('INSERT INTO teams(name) VALUES(?)').run('Team Alpha').lastInsertRowid;
-  repository.prepare('INSERT INTO team_members(team_id,user_id) VALUES(?,?)').run(team, mario);
-  const addHackathon = repository.prepare('INSERT INTO hackathons(name,regulation,registration_deadline,start_date,end_date,location,prize,max_team_size,organizer_id) VALUES(?,?,?,?,?,?,?,?,?)');
-  const open = addHackathon.run('HackHub Demo - Iscrizioni', 'Costruisci una soluzione digitale innovativa.', '2026-12-01T23:59:00Z', '2026-12-02T09:00:00Z', '2026-12-04T18:00:00Z', 'Roma', 500, 5, admin).lastInsertRowid;
-  const running = addHackathon.run('HackHub Demo - In Corso', 'Progetta il futuro della collaborazione.', '2026-01-01T23:59:00Z', '2026-01-02T09:00:00Z', '2026-12-31T18:00:00Z', 'Milano', 750, 5, admin).lastInsertRowid;
-  const evaluation = addHackathon.run('HackHub Demo - Valutazione', 'Una sfida dedicata all’impatto sociale.', '2025-01-01T23:59:00Z', '2025-01-02T09:00:00Z', '2025-06-30T18:00:00Z', 'Torino', 1000, 5, admin).lastInsertRowid;
-  const staff = repository.prepare('INSERT INTO hackathon_staff(hackathon_id,user_id,role) VALUES(?,?,?)');
-  for (const id of [open, running, evaluation]) { staff.run(id, judge, 'JUDGE'); staff.run(id, mentor, 'MENTOR'); }
-  repository.prepare('INSERT INTO registrations(hackathon_id,team_id) VALUES(?,?)').run(running, team);
-  repository.prepare('INSERT INTO submissions(hackathon_id,team_id,content,submitted_at) VALUES(?,?,?,CURRENT_TIMESTAMP)').run(running, team, 'https://repo.demo/team-alpha');
+
+  const connection = await database.getConnection();
+  try {
+    await connection.beginTransaction();
+    await connection.execute('INSERT INTO users(name,email,password_hash,role) VALUES (?,?,?,?)', ['Mario Demo', 'mario@hackhub.it', hashPassword(demoPasswords.user), 'USER']);
+    await connection.execute('INSERT INTO users(name,email,password_hash,role) VALUES (?,?,?,?)', ['Admin Demo', 'admin@hackhub.it', hashPassword(demoPasswords.organizer), 'ORGANIZER']);
+    await connection.execute('INSERT INTO users(name,email,password_hash,role) VALUES (?,?,?,?)', ['Giudice Demo', 'giudice@hackhub.it', hashPassword(demoPasswords.judge), 'JUDGE']);
+    await connection.execute('INSERT INTO users(name,email,password_hash,role) VALUES (?,?,?,?)', ['Mentore Demo', 'mentore@hackhub.it', hashPassword(demoPasswords.mentor), 'MENTOR']);
+
+    const [marioRows] = await connection.execute('SELECT id FROM users WHERE email=?', ['mario@hackhub.it']);
+    const [adminRows] = await connection.execute('SELECT id FROM users WHERE email=?', ['admin@hackhub.it']);
+    const [judgeRows] = await connection.execute('SELECT id FROM users WHERE email=?', ['giudice@hackhub.it']);
+    const [mentorRows] = await connection.execute('SELECT id FROM users WHERE email=?', ['mentore@hackhub.it']);
+
+    const mario = marioRows[0].id;
+    const admin = adminRows[0].id;
+    const judge = judgeRows[0].id;
+    const mentor = mentorRows[0].id;
+
+    const [teamResult] = await connection.execute('INSERT INTO teams(name) VALUES(?)', ['Team Alpha']);
+    const team = teamResult.insertId;
+    await connection.execute('INSERT INTO team_members(team_id,user_id) VALUES(?,?)', [team, mario]);
+
+    const hackathonSql = `
+      INSERT INTO hackathons(
+        name,regulation,registration_deadline,start_date,end_date,location,prize,max_team_size,organizer_id
+      ) VALUES(?,?,?,?,?,?,?,?,?)
+    `;
+    const [openResult] = await connection.execute(hackathonSql, [
+      'HackHub Demo - Iscrizioni',
+      'Costruisci una soluzione digitale innovativa.',
+      '2026-12-01T23:59:00Z',
+      '2026-12-02T09:00:00Z',
+      '2026-12-04T18:00:00Z',
+      'Roma',
+      500,
+      5,
+      admin,
+    ]);
+    const [runningResult] = await connection.execute(hackathonSql, [
+      'HackHub Demo - In Corso',
+      'Progetta il futuro della collaborazione.',
+      '2026-01-01T23:59:00Z',
+      '2026-01-02T09:00:00Z',
+      '2026-12-31T18:00:00Z',
+      'Milano',
+      750,
+      5,
+      admin,
+    ]);
+    const [evaluationResult] = await connection.execute(hackathonSql, [
+      'HackHub Demo - Valutazione',
+      'Una sfida dedicata all’impatto sociale.',
+      '2025-01-01T23:59:00Z',
+      '2025-01-02T09:00:00Z',
+      '2025-06-30T18:00:00Z',
+      'Torino',
+      1000,
+      5,
+      admin,
+    ]);
+
+    for (const id of [openResult.insertId, runningResult.insertId, evaluationResult.insertId]) {
+      await connection.execute('INSERT INTO hackathon_staff(hackathon_id,user_id,role) VALUES(?,?,?)', [id, judge, 'JUDGE']);
+      await connection.execute('INSERT INTO hackathon_staff(hackathon_id,user_id,role) VALUES(?,?,?)', [id, mentor, 'MENTOR']);
+    }
+    await connection.execute('INSERT INTO registrations(hackathon_id,team_id) VALUES(?,?)', [runningResult.insertId, team]);
+    await connection.execute('INSERT INTO submissions(hackathon_id,team_id,content,submitted_at) VALUES(?,?,?,CURRENT_TIMESTAMP)', [runningResult.insertId, team, 'https://repo.demo/team-alpha']);
+    await connection.commit();
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
 }
 
-function cleanDemoData({ runtimeEnvironment, repository }) {
+async function cleanDemoData({ runtimeEnvironment, database }) {
   if (!['development', 'test'].includes(runtimeEnvironment)) return;
 
-  const demoEvaluation = repository.prepare("SELECT id FROM hackathons WHERE name='HackHub Demo - Valutazione'").get();
-  const demoTeam = repository.prepare("SELECT id FROM teams WHERE name='Team Alpha'").get();
+  const [demoEvaluationRows] = await database.execute("SELECT id FROM hackathons WHERE name='HackHub Demo - Valutazione'");
+  const [demoTeamRows] = await database.execute("SELECT id FROM teams WHERE name='Team Alpha'");
+  const demoEvaluation = demoEvaluationRows[0];
+  const demoTeam = demoTeamRows[0];
   if (demoEvaluation && demoTeam) {
-    repository.prepare('DELETE FROM submissions WHERE hackathon_id=? AND team_id=?').run(demoEvaluation.id, demoTeam.id);
-    repository.prepare('DELETE FROM registrations WHERE hackathon_id=? AND team_id=?').run(demoEvaluation.id, demoTeam.id);
+    await database.execute('DELETE FROM submissions WHERE hackathon_id=? AND team_id=?', [demoEvaluation.id, demoTeam.id]);
+    await database.execute('DELETE FROM registrations WHERE hackathon_id=? AND team_id=?', [demoEvaluation.id, demoTeam.id]);
   }
-  const demoRunning = repository.prepare("SELECT id FROM hackathons WHERE name='HackHub Demo - In Corso'").get();
+  const [demoRunningRows] = await database.execute("SELECT id FROM hackathons WHERE name='HackHub Demo - In Corso'");
+  const demoRunning = demoRunningRows[0];
   if (demoRunning && demoTeam) {
-    repository.prepare('DELETE FROM registrations WHERE team_id=? AND hackathon_id<>?').run(demoTeam.id, demoRunning.id);
+    await database.execute('DELETE FROM registrations WHERE team_id=? AND hackathon_id<>?', [demoTeam.id, demoRunning.id]);
   }
 }
 

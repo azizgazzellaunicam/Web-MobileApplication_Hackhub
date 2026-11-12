@@ -7,56 +7,57 @@ class HackathonService {
     this.statusOf = statusOf;
   }
 
-  list(userId) {
-    const team = userId ? this.repository.teamForUser(userId) : null;
-    const assignments = userId ? this.repository.assignmentForUser(userId) : [];
+  async list(userId) {
+    const team = userId ? await this.repository.teamForUser(userId) : null;
+    const assignments = userId ? await this.repository.assignmentForUser(userId) : [];
     const assignedById = new Map(assignments.map((assignment) => [assignment.hackathon_id, assignment.role]));
-    return this.repository.list().map((item) => ({
+    const hackathons = await this.repository.list();
+    return Promise.all(hackathons.map(async (item) => ({
       ...item,
-      is_registered: Boolean(team && this.repository.isRegistered(item.id, team.team_id)),
+      is_registered: Boolean(team && await this.repository.isRegistered(item.id, team.team_id)),
       is_winner: Boolean(team && item.winner_team_id === team.team_id),
       assigned_role: assignedById.get(item.id) || null,
-    }));
+    })));
   }
 
-  detail(id) {
-    const item = this.repository.findById(id);
+  async detail(id) {
+    const item = await this.repository.findById(id);
     if (!item) throw httpError(HttpStatus.NOT_FOUND, 'Hackathon non trovato.');
     return item;
   }
 
-  assigned(userId) {
+  async assigned(userId) {
     return this.repository.listAssigned(userId);
   }
 
-  evaluation(userId) {
-    return this.repository.listEvaluation(userId)
+  async evaluation(userId) {
+    return (await this.repository.listEvaluation(userId))
       .filter((item) => this.statusOf(item) === 'VALUTAZIONE');
   }
 
-  staff() {
+  async staff() {
     return this.repository.listStaff();
   }
 
-  assignStaff(hackathonId, organizerId, input) {
-    const hackathon = this.detail(hackathonId);
+  async assignStaff(hackathonId, organizerId, input) {
+    const hackathon = await this.detail(hackathonId);
     if (hackathon.organizer_id !== organizerId) {
       throw httpError(HttpStatus.FORBIDDEN, 'Solo l’organizzatore può assegnare lo staff.');
     }
     const role = input?.role;
     if (!['JUDGE', 'MENTOR'].includes(role)) throw httpError(HttpStatus.BAD_REQUEST, 'Ruolo staff non valido.');
-    const member = this.repository.findUserWithRole(Number(input.userId), role);
+    const member = await this.repository.findUserWithRole(Number(input.userId), role);
     if (!member) throw httpError(HttpStatus.BAD_REQUEST, 'L’utente non ha il ruolo richiesto.');
-    if (this.repository.findStaff(hackathonId).some((item) => item.user_id === member.id && item.role === role)) {
+    if ((await this.repository.findStaff(hackathonId)).some((item) => item.user_id === member.id && item.role === role)) {
       throw httpError(HttpStatus.CONFLICT, 'Utente già assegnato a questo hackathon.');
     }
-    this.repository.assignStaff(hackathonId, member.id, role);
+    await this.repository.assignStaff(hackathonId, member.id, role);
   }
 
-  create(organizerId, input = {}) {
+  async create(organizerId, input = {}) {
     this.validateDetails(input);
-    const judge = this.repository.findUserWithRole(Number(input.judgeId), 'JUDGE');
-    const mentor = this.repository.findUserWithRole(Number(input.mentorId), 'MENTOR');
+    const judge = await this.repository.findUserWithRole(Number(input.judgeId), 'JUDGE');
+    const mentor = await this.repository.findUserWithRole(Number(input.mentorId), 'MENTOR');
     if (!judge || !mentor) throw httpError(HttpStatus.BAD_REQUEST, 'È necessario assegnare almeno un giudice e un mentore validi.');
     return this.repository.create({
       ...input,
@@ -105,13 +106,13 @@ class HackathonService {
     }
   }
 
-  update(id, organizerId, input = {}) {
-    const hackathon = this.repository.findById(id);
+  async update(id, organizerId, input = {}) {
+    const hackathon = await this.repository.findById(id);
     if (!hackathon) throw httpError(HttpStatus.NOT_FOUND, 'Hackathon non trovato.');
     if (hackathon.organizer_id !== organizerId) {
       throw httpError(HttpStatus.FORBIDDEN, 'Solo l’organizzatore dell’hackathon può modificarlo.');
     }
-    const staff = this.repository.findStaff(id);
+    const staff = await this.repository.findStaff(id);
     const currentJudge = staff.find((member) => member.role === 'JUDGE');
     const currentMentor = staff.find((member) => member.role === 'MENTOR');
     const merged = {
@@ -127,8 +128,8 @@ class HackathonService {
       mentorId: input.mentorId ?? currentMentor?.user_id,
     };
     this.validateDetails(merged);
-    const judge = this.repository.findUserWithRole(Number(merged.judgeId), 'JUDGE');
-    const mentor = this.repository.findUserWithRole(Number(merged.mentorId), 'MENTOR');
+    const judge = await this.repository.findUserWithRole(Number(merged.judgeId), 'JUDGE');
+    const mentor = await this.repository.findUserWithRole(Number(merged.mentorId), 'MENTOR');
     if (!judge || !mentor) throw httpError(HttpStatus.BAD_REQUEST, 'Giudice o mentore non validi.');
     return this.repository.update(id, {
       ...merged,
@@ -144,17 +145,17 @@ class HackathonService {
     });
   }
 
-  delete(id, organizerId) {
-      const hackathon = this.repository.findById(id);
-      if (!hackathon) throw httpError(HttpStatus.NOT_FOUND, 'Hackathon non trovato.');
-      if (hackathon.organizer_id !== organizerId) {
-        throw httpError(HttpStatus.FORBIDDEN, 'Solo l’organizzatore dell’hackathon può eliminarlo.');
-      }
-      this.repository.delete(id);
+  async delete(id, organizerId) {
+    const hackathon = await this.repository.findById(id);
+    if (!hackathon) throw httpError(HttpStatus.NOT_FOUND, 'Hackathon non trovato.');
+    if (hackathon.organizer_id !== organizerId) {
+      throw httpError(HttpStatus.FORBIDDEN, 'Solo l’organizzatore dell’hackathon può eliminarlo.');
+    }
+    await this.repository.delete(id);
   }
 
-  updateStatus(id, organizerId, status) {
-    const hackathon = this.repository.findById(id);
+  async updateStatus(id, organizerId, status) {
+    const hackathon = await this.repository.findById(id);
     if (!hackathon) throw httpError(HttpStatus.NOT_FOUND, 'Hackathon non trovato.');
     if (hackathon.organizer_id !== organizerId) {
       throw httpError(HttpStatus.FORBIDDEN, 'Solo l’organizzatore dell’hackathon può modificarne lo stato.');

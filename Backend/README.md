@@ -1,186 +1,60 @@
 # HackHub Backend
 
-Backend REST di HackHub, realizzato con Node.js, Express e SQLite.
-
-Il server gestisce:
-
-- registrazione, accesso e profili degli utenti;
-- ruoli e autorizzazioni;
-- team e inviti;
-- hackathon e iscrizioni;
-- sottomissioni e valutazioni;
-- classifiche e vincitori;
-- notifiche;
-- richieste di supporto e call con i mentori.
-
-Le API utilizzano richieste e risposte in formato JSON.
+Backend REST di HackHub, realizzato con Node.js, Express e MariaDB (InnoDB).
 
 ## Tecnologie
 
 - Node.js
 - Express 5
-- SQLite
+- MariaDB
+- `mysql2/promise`
 - JavaScript
 - `node:test` per i test
 
-## Struttura
+## Configurazione database
 
-Il codice si trova nella cartella `src`:
+Il backend usa un connection pool MariaDB configurato solo via variabili d'ambiente:
 
-- `server.js`: avvia il server HTTP;
-- `app.js`: configura Express, database, middleware e route;
-- `controller`: definisce gli endpoint REST;
-- `service`: contiene la logica applicativa;
-- `repository`: gestisce l'accesso al database;
-- `database`: inizializza, aggiorna e popola lo schema SQLite;
-- `middleware`: autenticazione e gestione degli errori;
-- `adapter`: integrazioni simulate per pagamenti e calendario;
-- `strategy`: logiche specifiche, come la selezione del vincitore.
+- `DB_HOST`
+- `DB_PORT` (default `3306`)
+- `DB_USER`
+- `DB_PASSWORD`
+- `DB_NAME`
+- `DB_POOL_SIZE` (default `10`)
 
-Il database predefinito è `hackhub.sqlite` nella cartella `Backend`.
-`HACKHUB_DB_PATH` accetta percorsi assoluti o relativi a `Backend`; le
-directory mancanti vengono create automaticamente. Il valore `:memory:` apre
-un database temporaneo in memoria senza creare file o directory.
+Le credenziali non sono hardcoded nel codice.
+
+## Schema e migrazioni
+
+All’avvio:
+
+1. crea lo schema con `CREATE TABLE IF NOT EXISTS`;
+2. applica migrazioni idempotenti (`status_override`, indice team unico);
+3. esegue i controlli di sicurezza startup;
+4. popola eventuali dati demo in sviluppo/test.
+
+## Migrazione dati SQLite → MariaDB
+
+È disponibile lo script:
+
+```bash
+npm run db:migrate:sqlite
+```
+
+Variabile opzionale:
+
+- `SQLITE_SOURCE_PATH` (default `Backend/hackhub.sqlite`)
+
+Lo script preserva ID e relazioni, usa insert idempotenti e riallinea gli `AUTO_INCREMENT`.
 
 ## Avvio
-
-Dalla cartella `Backend`:
 
 ```bash
 npm install
 npm start
 ```
 
-Il server viene avviato sulla porta `3000`. `GET /health` verifica anche che
-SQLite sia utilizzabile e risponde `503` quando il database non è disponibile.
-
-Il frontend Angular utilizza il proxy di sviluppo per inoltrare le richieste
-`/api` al backend.
-
-In sviluppo, l'avvio crea o aggiorna gli account demo automaticamente:
-
-| Ruolo | Email | Password |
-| --- | --- | --- |
-| Utente | `mario@hackhub.it` | `password` |
-| Organizzatore | `admin@hackhub.it` | `password` |
-| Giudice | `giudice@hackhub.it` | `password` |
-| Mentore | `mentore@hackhub.it` | `password` |
-
-Questi account sono disponibili solo in sviluppo e non vengono creati in
-produzione.
-
-## API principali
-
-| Metodo | Endpoint | Descrizione |
-| --- | --- | --- |
-| GET | `/health` | Verifica lo stato del server |
-| POST | `/api/auth/register` | Registra un nuovo utente |
-| POST | `/api/auth/login` | Esegue l'accesso |
-| POST | `/api/auth/refresh` | Rinnova la sessione autenticata |
-| POST | `/api/auth/logout` | Chiude la sessione |
-| GET/PUT | `/api/auth/profile` | Legge o aggiorna il profilo |
-| GET | `/api/hackathons` | Restituisce gli hackathon |
-| POST | `/api/hackathons` | Crea un hackathon |
-| PUT/DELETE | `/api/hackathons/:id` | Modifica o elimina un hackathon |
-| POST | `/api/hackathons/:id/registrations` | Iscrive un team |
-| POST | `/api/hackathons/:id/submissions` | Invia una sottomissione |
-| GET | `/api/submissions/mine` | Restituisce le sottomissioni dell'utente |
-| POST | `/api/submissions/:id/evaluations` | Registra una valutazione |
-| GET/POST | `/api/teams` | Consulta o crea un team |
-| GET | `/api/profile/wins` | Restituisce gli hackathon vinti |
-| GET | `/api/notifications` | Restituisce le notifiche |
-| GET | `/api/hackathons/:id/ranking` | Restituisce la classifica |
-
-Gli endpoint protetti accettano l'access token JWT in cookie `hackhub_access`
-oppure nell'header:
-
-```text
-Authorization: Bearer <token>
-```
-
-Il login e la registrazione impostano due cookie `HttpOnly`:
-
-- `hackhub_access`: access token JWT (durata breve, predefinita `15m`);
-- `hackhub_refresh`: refresh token opaco (predefinita `7 giorni`, path `/api/auth`).
-
-Entrambi usano `SameSite=Lax`; in produzione includono `Secure`.
-La risposta JSON non espone mai i token. Il middleware continua ad accettare
-anche `Authorization: Bearer` per integrazioni che ricevono l'access token da
-un canale separato.
-
-## Token e persistenza
-
-I refresh token sono memorizzati nella tabella SQLite `refresh_tokens`.
-Il database conserva solo l'hash SHA-256 del refresh token, l'utente associato,
-scadenza, stato di revoca, famiglia e collegamento di rotazione.
-
-- il login crea una coppia access/refresh e imposta i cookie `HttpOnly`;
-- l'access token viene verificato localmente (firma, algoritmo, issuer/audience, exp)
-  senza query SQLite per ogni richiesta;
-- `POST /api/auth/refresh` ruota il refresh token in modo atomico;
-- il riuso di un refresh già ruotato invalida la famiglia del token;
-- il logout revoca il refresh token corrente e cancella entrambi i cookie.
-
-Per il deployment, impostare `HACKHUB_DB_PATH` su un percorso persistente e
-servire l'applicazione in HTTPS. In produzione il cookie richiede HTTPS
-perché viene marcato `Secure`. Non usare un database temporaneo o effimero se
-si vuole mantenere l'autenticazione dopo un riavvio o un redeploy.
-
-## Configurazione
-
-Le principali variabili d'ambiente sono:
-
-- `PORT`: porta del server, predefinita a `3000`;
-- `HACKHUB_DB_PATH`: percorso del database SQLite;
-- `HACKHUB_SEED_DEMO=false`: disabilita il seed demo in sviluppo;
-- `HACKHUB_DEMO_*_PASSWORD`: sostituisce le password demo predefinite.
-- `HACKHUB_JWT_SECRET`: chiave JWT di almeno 32 caratteri; obbligatoria in
-  produzione;
-- `HACKHUB_ACCESS_TOKEN_TTL`: durata del JWT access token, predefinita a `15m`;
-- `HACKHUB_REFRESH_TOKEN_TTL_SECONDS`: durata del refresh token in secondi,
-  predefinita a `604800` (7 giorni).
-- `HACKHUB_JWT_ISSUER`: issuer del JWT, predefinito `hackhub-api`;
-- `HACKHUB_JWT_AUDIENCE`: audience del JWT, predefinito `hackhub-web`;
-- `NODE_ENV=production`: abilita il flag `Secure` dei cookie auth e richiede
-  un secret JWT esplicito.
-
-I TTL sono validati all'avvio; il backend rifiuta valori vuoti, non validi o
-non positivi. Il `Max-Age` dei cookie segue i TTL effettivamente configurati.
-In development/test, se `HACKHUB_JWT_SECRET` non è impostata, il backend genera
-una chiave casuale temporanea (solo in development viene stampato un avviso).
-I token diventano invalidi al riavvio del processo. Per mantenere le sessioni,
-impostare una chiave persistente, ad esempio in PowerShell:
-
-```powershell
-$env:HACKHUB_JWT_SECRET = 'inserire-una-chiave-casuale-di-almeno-32-caratteri'
-npm start
-```
-
-Con `NODE_ENV=production` il seed demo non viene eseguito e il backend rifiuta
-l'avvio se rileva account demo nel database. Impostare `HACKHUB_DB_PATH` su un
-percorso persistente e servire l'applicazione in HTTPS per mantenere i dati e
-inviare i cookie `Secure`.
-
-## Container Docker
-
-Dalla root del repository, copia `.env.example` in `.env` e valorizza
-`HACKHUB_JWT_SECRET` con una chiave casuale di almeno 32 caratteri. Il Compose
-root carica `.env` per le variabili interpolate; il secret non ha un valore di
-default e `.env` è escluso da Git e dai contesti Docker.
-
-```powershell
-Copy-Item .env.example .env
-node -e "console.log(require('node:crypto').randomBytes(48).toString('base64url'))"
-```
-
-Il servizio backend è costruito da `Backend/Dockerfile` su Node
-`22.22.3-bookworm-slim`, esegue `npm ci --omit=dev` e avvia `npm start` in
-`NODE_ENV=production`. La porta `3000` è esposta solo alla rete Compose, non
-pubblicata sull'host. `HACKHUB_DB_PATH=/app/data/hackhub.sqlite` punta al volume
-nominato `hackhub_data`; database e file SQLite WAL/SHM sopravvivono a stop,
-ricreazione e rebuild dei container. Nginx inoltra `/api/` e `/health` dal
-frontend. I comandi per avviare, controllare e fermare l'intero stack sono
-documentati nel [README principale](../README.md#avvio-locale-con-docker-compose).
+`GET /health` verifica sia il processo HTTP sia la raggiungibilità MariaDB (`SELECT 1`).
 
 ## Test
 
@@ -188,5 +62,4 @@ documentati nel [README principale](../README.md#avvio-locale-con-docker-compose
 npm test
 ```
 
-I test utilizzano un database temporaneo e verificano autenticazione JWT,
-refresh con rotazione/revoca, autorizzazioni e accesso ai dati.
+I test usano MariaDB e richiedono le variabili `DB_*` configurate.

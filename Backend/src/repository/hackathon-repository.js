@@ -1,71 +1,66 @@
-class HackathonRepository {
-  constructor(database) {
-    this.database = database;
+const { BaseRepository } = require('./base-repository');
+
+class HackathonRepository extends BaseRepository {
+  async findById(id) {
+    return this.one('SELECT * FROM hackathons WHERE id=?', [id]);
   }
 
-  findById(id) {
-    return this.database.prepare('SELECT * FROM hackathons WHERE id=?').get(id);
+  async findStaff(id) {
+    return this.all('SELECT user_id,role FROM hackathon_staff WHERE hackathon_id=?', [id]);
   }
 
-  findStaff(id) {
-    return this.database.prepare('SELECT user_id,role FROM hackathon_staff WHERE hackathon_id=?').all(id);
+  async findUserWithRole(id, role) {
+    return this.one('SELECT id FROM users WHERE id=? AND role=?', [id, role]);
   }
 
-  findUserWithRole(id, role) {
-    return this.database.prepare('SELECT id FROM users WHERE id=? AND role=?').get(id, role);
+  async list() {
+    return this.all('SELECT * FROM hackathons ORDER BY start_date');
   }
 
-  list() {
-    return this.database.prepare('SELECT * FROM hackathons ORDER BY start_date').all();
-  }
-
-  listAssigned(userId) {
-    return this.database.prepare(`
+  async listAssigned(userId) {
+    return this.all(`
       SELECT h.* FROM hackathons h
       JOIN hackathon_staff s ON s.hackathon_id=h.id
       WHERE s.user_id=? ORDER BY h.start_date
-    `).all(userId);
+    `, [userId]);
   }
 
-  listEvaluation(userId) {
-    return this.database.prepare(`
+  async listEvaluation(userId) {
+    return this.all(`
       SELECT h.* FROM hackathons h
       JOIN hackathon_staff s ON s.hackathon_id=h.id
       WHERE s.user_id=? AND s.role='JUDGE'
-    `).all(userId);
+    `, [userId]);
   }
 
-  listStaff() {
-    return this.database.prepare("SELECT id,name,email,role FROM users WHERE role IN ('JUDGE','MENTOR') ORDER BY role,name").all();
+  async listStaff() {
+    return this.all("SELECT id,name,email,role FROM users WHERE role IN ('JUDGE','MENTOR') ORDER BY role,name");
   }
 
-  teamForUser(userId) {
-    return this.database.prepare('SELECT team_id FROM team_members WHERE user_id=?').get(userId);
+  async teamForUser(userId) {
+    return this.one('SELECT team_id FROM team_members WHERE user_id=?', [userId]);
   }
 
-  assignmentForUser(userId) {
-    return this.database.prepare('SELECT hackathon_id,role FROM hackathon_staff WHERE user_id=?').all(userId);
+  async assignmentForUser(userId) {
+    return this.all('SELECT hackathon_id,role FROM hackathon_staff WHERE user_id=?', [userId]);
   }
 
-  isRegistered(hackathonId, teamId) {
-    return this.database.prepare('SELECT 1 FROM registrations WHERE hackathon_id=? AND team_id=?')
-      .get(hackathonId, teamId);
+  async isRegistered(hackathonId, teamId) {
+    return this.one('SELECT 1 FROM registrations WHERE hackathon_id=? AND team_id=?', [hackathonId, teamId]);
   }
 
-  assignStaff(hackathonId, userId, role) {
-    this.database.prepare('INSERT INTO hackathon_staff(hackathon_id,user_id,role) VALUES(?,?,?)')
-      .run(hackathonId, userId, role);
+  async assignStaff(hackathonId, userId, role) {
+    await this.run('INSERT INTO hackathon_staff(hackathon_id,user_id,role) VALUES(?,?,?)', [hackathonId, userId, role]);
   }
 
-  create(input) {
-    this.database.prepare('BEGIN').run();
-    try {
-      const result = this.database.prepare(`
+  async create(input) {
+    return this.transaction(async (repository) => {
+      const result = await repository.run(`
         INSERT INTO hackathons(
           name,regulation,registration_deadline,start_date,end_date,location,
           prize,max_team_size,organizer_id
         ) VALUES(?,?,?,?,?,?,?,?,?)
-      `).run(
+      `, [
         input.name,
         input.regulation,
         input.registrationDeadline,
@@ -75,87 +70,77 @@ class HackathonRepository {
         input.prize,
         input.maxTeamSize,
         input.organizerId,
-      );
-      this.assignStaff(result.lastInsertRowid, input.judgeId, 'JUDGE');
-      this.assignStaff(result.lastInsertRowid, input.mentorId, 'MENTOR');
-      this.database.prepare('COMMIT').run();
-      return this.findById(result.lastInsertRowid);
-    } catch (error) {
-      this.database.prepare('ROLLBACK').run();
-      throw error;
-    }
+      ]);
+      await repository.assignStaff(result.lastInsertRowid, input.judgeId, 'JUDGE');
+      await repository.assignStaff(result.lastInsertRowid, input.mentorId, 'MENTOR');
+      return repository.findById(result.lastInsertRowid);
+    });
   }
 
-  submissions(hackathonId) {
-    return this.database.prepare('SELECT id,team_id FROM submissions WHERE hackathon_id=?').all(hackathonId);
+  async submissions(hackathonId) {
+    return this.all('SELECT id,team_id FROM submissions WHERE hackathon_id=?', [hackathonId]);
   }
 
-  hasEvaluation(submissionId) {
-    return this.database.prepare('SELECT 1 FROM evaluations WHERE submission_id=?').get(submissionId);
+  async hasEvaluation(submissionId) {
+    return this.one('SELECT 1 FROM evaluations WHERE submission_id=?', [submissionId]);
   }
 
-  ranking(hackathonId) {
-    return this.database.prepare(`
+  async ranking(hackathonId) {
+    return this.all(`
       SELECT t.id AS team_id, t.name AS team_name, AVG(e.score) AS average_score
       FROM submissions s
       JOIN teams t ON t.id=s.team_id
       JOIN evaluations e ON e.submission_id=s.id
       WHERE s.hackathon_id=? GROUP BY t.id,t.name
-    `).all(hackathonId);
+    `, [hackathonId]);
   }
 
-  isTeamRegistered(hackathonId, teamId) {
-    return this.database.prepare('SELECT 1 FROM registrations WHERE hackathon_id=? AND team_id=?')
-      .get(hackathonId, teamId);
+  async isTeamRegistered(hackathonId, teamId) {
+    return this.one('SELECT 1 FROM registrations WHERE hackathon_id=? AND team_id=?', [hackathonId, teamId]);
   }
 
-  submissionForTeam(hackathonId, teamId) {
-    return this.database.prepare('SELECT id FROM submissions WHERE hackathon_id=? AND team_id=?')
-      .get(hackathonId, teamId);
+  async submissionForTeam(hackathonId, teamId) {
+    return this.one('SELECT id FROM submissions WHERE hackathon_id=? AND team_id=?', [hackathonId, teamId]);
   }
 
-  teamMembers(teamId) {
-    return this.database.prepare('SELECT user_id FROM team_members WHERE team_id=?').all(teamId);
+  async teamMembers(teamId) {
+    return this.all('SELECT user_id FROM team_members WHERE team_id=?', [teamId]);
   }
 
-  team(teamId) {
-    return this.database.prepare('SELECT name FROM teams WHERE id=?').get(teamId);
+  async team(teamId) {
+    return this.one('SELECT name FROM teams WHERE id=?', [teamId]);
   }
 
-  proclaimWinner(hackathonId, teamId) {
-    this.database.prepare('BEGIN').run();
-    try {
-      const result = this.database.prepare(
+  async proclaimWinner(hackathonId, teamId) {
+    return this.transaction(async (repository) => {
+      const result = await repository.run(
         'UPDATE hackathons SET winner_team_id=? WHERE id=? AND winner_team_id IS NULL',
-      ).run(teamId, hackathonId);
-      this.database.prepare('COMMIT').run();
+        [teamId, hackathonId],
+      );
       return result.changes > 0;
-    } catch (error) {
-      this.database.prepare('ROLLBACK').run();
-      throw error;
-    }
+    });
   }
 
-  clearWinner(hackathonId, teamId) {
-    this.database.prepare(
+  async clearWinner(hackathonId, teamId) {
+    await this.run(
       'UPDATE hackathons SET winner_team_id=NULL WHERE id=? AND winner_team_id=?',
-    ).run(hackathonId, teamId);
+      [hackathonId, teamId],
+    );
   }
 
-  updateStatus(id, status) {
-    this.database.prepare('UPDATE hackathons SET status_override=? WHERE id=?').run(status, id);
+  async updateStatus(id, status) {
+    await this.run('UPDATE hackathons SET status_override=? WHERE id=?', [status, id]);
     return this.findById(id);
   }
 
-  update(id, input) {
-    this.database.prepare('BEGIN').run();
-    try {
-      this.database.prepare(`
+  async update(id, input) {
+    return this.transaction(async (repository) => {
+      await repository.run(`
         UPDATE hackathons
         SET name=?, regulation=?, registration_deadline=?, start_date=?, end_date=?,
             location=?, prize=?, max_team_size=?
         WHERE id=?
-      `).run(
+      `, [
         input.name,
         input.regulation,
         input.registrationDeadline,
@@ -165,33 +150,33 @@ class HackathonRepository {
         input.prize,
         input.maxTeamSize,
         id,
+      ]);
+      await repository.run(
+        'INSERT IGNORE INTO hackathon_staff(hackathon_id,user_id,role) VALUES (?,?,?)',
+        [id, input.judgeId, 'JUDGE'],
       );
-      this.database.prepare(`
-        INSERT OR IGNORE INTO hackathon_staff(hackathon_id,user_id,role) VALUES (?,?,?)
-      `).run(id, input.judgeId, 'JUDGE');
-      this.database.prepare(`
-        INSERT OR IGNORE INTO hackathon_staff(hackathon_id,user_id,role) VALUES (?,?,?)
-      `).run(id, input.mentorId, 'MENTOR');
+      await repository.run(
+        'INSERT IGNORE INTO hackathon_staff(hackathon_id,user_id,role) VALUES (?,?,?)',
+        [id, input.mentorId, 'MENTOR'],
+      );
       if (input.previousJudgeId && input.previousJudgeId !== input.judgeId) {
-        this.database.prepare(`
-          DELETE FROM hackathon_staff WHERE hackathon_id=? AND user_id=? AND role='JUDGE'
-        `).run(id, input.previousJudgeId);
+        await repository.run(
+          "DELETE FROM hackathon_staff WHERE hackathon_id=? AND user_id=? AND role='JUDGE'",
+          [id, input.previousJudgeId],
+        );
       }
       if (input.previousMentorId && input.previousMentorId !== input.mentorId) {
-        this.database.prepare(`
-          DELETE FROM hackathon_staff WHERE hackathon_id=? AND user_id=? AND role='MENTOR'
-        `).run(id, input.previousMentorId);
+        await repository.run(
+          "DELETE FROM hackathon_staff WHERE hackathon_id=? AND user_id=? AND role='MENTOR'",
+          [id, input.previousMentorId],
+        );
       }
-      this.database.prepare('COMMIT').run();
-      return this.findById(id);
-    } catch (error) {
-      this.database.prepare('ROLLBACK').run();
-      throw error;
-    }
+      return repository.findById(id);
+    });
   }
 
-  delete(id) {
-    this.database.prepare('DELETE FROM hackathons WHERE id=?').run(id);
+  async delete(id) {
+    await this.run('DELETE FROM hackathons WHERE id=?', [id]);
   }
 }
 

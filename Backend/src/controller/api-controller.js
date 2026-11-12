@@ -34,118 +34,94 @@ function registerApiRoutes({
     res.json(publicResponse);
   };
 
-  app.post('/api/auth/register', (req, res, next) => {
-    try { authResponse(res, authService.register(req.body)); } catch (error) { next(error); }
-  });
-  app.post('/api/auth/login', (req, res, next) => {
-    try { authResponse(res, authService.login(req.body)); } catch (error) { next(error); }
-  });
-  app.post('/api/auth/refresh', (req, res, next) => {
-    try {
-      const token = req.headers.cookie?.split(';').map((part) => part.trim())
-        .find((part) => part.startsWith('hackhub_refresh='))?.slice('hackhub_refresh='.length);
-      authResponse(res, authService.refresh(token));
-    } catch (error) { next(error); }
-  });
-  app.post('/api/auth/logout', (req, res) => {
+  app.post('/api/auth/register', async (req, res) => authResponse(res, await authService.register(req.body)));
+  app.post('/api/auth/login', async (req, res) => authResponse(res, await authService.login(req.body)));
+  app.post('/api/auth/refresh', async (req, res) => {
     const token = req.headers.cookie?.split(';').map((part) => part.trim())
       .find((part) => part.startsWith('hackhub_refresh='))?.slice('hackhub_refresh='.length);
-    authService.logout(token);
+    authResponse(res, await authService.refresh(token));
+  });
+  app.post('/api/auth/logout', async (req, res) => {
+    const token = req.headers.cookie?.split(';').map((part) => part.trim())
+      .find((part) => part.startsWith('hackhub_refresh='))?.slice('hackhub_refresh='.length);
+    await authService.logout(token);
     clearCookies(res);
     res.sendStatus(204);
   });
-  app.get('/api/auth/profile', auth, (req, res, next) => {
-    const user = userRepository.findById(req.user.id);
+  app.get('/api/auth/profile', auth, async (req, res, next) => {
+    const user = await userRepository.findById(req.user.id);
     if (!user) return next(httpError(HttpStatus.UNAUTHORIZED, 'Autenticazione richiesta.'));
     res.json(user);
   });
-  app.put('/api/auth/profile', auth, (req, res, next) => {
-    try {
-      const user = authService.updateProfile(req.user.id, req.body);
-      req.user.name = user.name;
-      req.user.email = user.email;
-      res.json(user);
-    } catch (error) { next(error); }
+  app.put('/api/auth/profile', auth, async (req, res) => {
+    const user = await authService.updateProfile(req.user.id, req.body);
+    req.user.name = user.name;
+    req.user.email = user.email;
+    res.json(user);
   });
 
-  app.get('/api/profile/wins', auth, (req, res) => {
-    res.json(profileService.wins(req.user.id));
+  app.get('/api/profile/wins', auth, async (req, res) => {
+    res.json(await profileService.wins(req.user.id));
   });
-  app.get('/api/notifications', auth, (req, res) => {
+  app.get('/api/notifications', auth, async (req, res) => {
     res.json({
-      items: notificationService.listForUser(req.user.id),
-      unreadCount: notificationService.unreadCount(req.user.id),
+      items: await notificationService.listForUser(req.user.id),
+      unreadCount: await notificationService.unreadCount(req.user.id),
     });
   });
-  app.get('/api/notifications/unread-count', auth, (req, res) => {
-    res.json({ unreadCount: notificationService.unreadCount(req.user.id) });
+  app.get('/api/notifications/unread-count', auth, async (req, res) => {
+    res.json({ unreadCount: await notificationService.unreadCount(req.user.id) });
   });
-  app.put('/api/notifications/:id/read', auth, (req, res, next) => {
-    try {
-      if (!notificationService.markRead(req.user.id, Number(req.params.id))) {
-        const error = new Error('Notifica non trovata.');
-        error.status = 404;
-        throw error;
-      }
-      res.sendStatus(204);
-    } catch (error) { next(error); }
+  app.put('/api/notifications/:id/read', auth, async (req, res) => {
+    if (!await notificationService.markRead(req.user.id, Number(req.params.id))) {
+      throw httpError(HttpStatus.NOT_FOUND, 'Notifica non trovata.');
+    }
+    res.sendStatus(204);
   });
 
-  app.get('/api/hackathons', authOptional, (req, res) => {
-    res.json(hackathonService.list(req.user?.id).map(hackathon));
+  app.get('/api/hackathons', authOptional, async (req, res) => {
+    res.json((await hackathonService.list(req.user?.id)).map(hackathon));
   });
-  app.put('/api/hackathons/:id/status', auth, role('ORGANIZER'), (req, res, next) => {
-    try {
-      const status = req.body?.status === null || req.body?.status === '' ? null : req.body?.status;
-      const item = hackathonService.updateStatus(Number(req.params.id), req.user.id, status);
-      res.json(hackathon(item));
-    } catch (error) { next(error); }
+  app.put('/api/hackathons/:id/status', auth, role('ORGANIZER'), async (req, res) => {
+    const status = req.body?.status === null || req.body?.status === '' ? null : req.body?.status;
+    const item = await hackathonService.updateStatus(Number(req.params.id), req.user.id, status);
+    res.json(hackathon(item));
   });
-  app.put('/api/hackathons/:id', auth, role('ORGANIZER'), (req, res, next) => {
-    try { res.json(hackathon(hackathonService.update(Number(req.params.id), req.user.id, req.body || {}))); } catch (error) { next(error); }
+  app.put('/api/hackathons/:id', auth, role('ORGANIZER'), async (req, res) => {
+    res.json(hackathon(await hackathonService.update(Number(req.params.id), req.user.id, req.body || {})));
   });
-  app.delete('/api/hackathons/:id', auth, role('ORGANIZER'), (req, res, next) => {
-    try {
-      hackathonService.delete(Number(req.params.id), req.user.id);
-      res.sendStatus(204);
-    } catch (error) { next(error); }
+  app.delete('/api/hackathons/:id', auth, role('ORGANIZER'), async (req, res) => {
+    await hackathonService.delete(Number(req.params.id), req.user.id);
+    res.sendStatus(204);
   });
-  app.get('/api/hackathons/assigned', auth, role('JUDGE', 'MENTOR'), (req, res) => {
-    res.json(hackathonService.assigned(req.user.id).map(hackathon));
+  app.get('/api/hackathons/assigned', auth, role('JUDGE', 'MENTOR'), async (req, res) => {
+    res.json((await hackathonService.assigned(req.user.id)).map(hackathon));
   });
-  app.get('/api/hackathons/evaluation', auth, role('JUDGE'), (req, res) => {
-    res.json(hackathonService.evaluation(req.user.id).map(hackathon));
+  app.get('/api/hackathons/evaluation', auth, role('JUDGE'), async (req, res) => {
+    res.json((await hackathonService.evaluation(req.user.id)).map(hackathon));
   });
-  app.get('/api/hackathons/:id', (req, res, next) => {
-    try { res.json(hackathon(hackathonService.detail(Number(req.params.id)))); } catch (error) { next(error); }
+  app.get('/api/hackathons/:id', async (req, res) => {
+    res.json(hackathon(await hackathonService.detail(Number(req.params.id))));
   });
-  app.get('/api/staff', auth, role('ORGANIZER'), (_req, res) => {
-    res.json(hackathonService.staff());
+  app.get('/api/staff', auth, role('ORGANIZER'), async (_req, res) => {
+    res.json(await hackathonService.staff());
   });
-  app.post('/api/hackathons/:id/staff', auth, role('ORGANIZER'), (req, res, next) => {
-    try {
-      hackathonService.assignStaff(Number(req.params.id), req.user.id, req.body);
-      res.status(201).json({ message: 'Staff assegnato.' });
-    } catch (error) { next(error); }
+  app.post('/api/hackathons/:id/staff', auth, role('ORGANIZER'), async (req, res) => {
+    await hackathonService.assignStaff(Number(req.params.id), req.user.id, req.body);
+    res.status(201).json({ message: 'Staff assegnato.' });
   });
-  app.post('/api/hackathons', auth, role('ORGANIZER'), (req, res, next) => {
-    try {
-      res.status(201).json(hackathon(hackathonService.create(req.user.id, req.body)));
-    } catch (error) { next(error); }
+  app.post('/api/hackathons', auth, role('ORGANIZER'), async (req, res) => {
+    res.status(201).json(hackathon(await hackathonService.create(req.user.id, req.body)));
   });
-  app.post('/api/hackathons/:id/winner/auto', auth, role('ORGANIZER'), (req, res, next) => {
-    try {
-      res.json(competitionService.proclaimAuto(req.user.id, Number(req.params.id)));
-    } catch (error) { next(error); }
+  app.post('/api/hackathons/:id/winner/auto', auth, role('ORGANIZER'), async (req, res) => {
+    res.json(await competitionService.proclaimAuto(req.user.id, Number(req.params.id)));
   });
-  app.post('/api/hackathons/:id/winner/:teamId', auth, role('ORGANIZER'), (req, res, next) => {
-    try {
-      res.json(competitionService.proclaimManual(
-        req.user.id,
-        Number(req.params.id),
-        Number(req.params.teamId),
-      ));
-    } catch (error) { next(error); }
+  app.post('/api/hackathons/:id/winner/:teamId', auth, role('ORGANIZER'), async (req, res) => {
+    res.json(await competitionService.proclaimManual(
+      req.user.id,
+      Number(req.params.id),
+      Number(req.params.teamId),
+    ));
   });
 }
 

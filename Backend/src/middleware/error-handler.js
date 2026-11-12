@@ -1,8 +1,7 @@
 const { HttpStatus, validErrorStatuses } = require('../http/http-errors');
 
 function isConstraintError(error) {
-  return error?.code?.startsWith('SQLITE_CONSTRAINT')
-    || (error?.code === 'ERR_SQLITE_ERROR' && [1555, 2067].includes(error?.errcode));
+  return ['ER_DUP_ENTRY', 'ER_ROW_IS_REFERENCED_2', 'ER_NO_REFERENCED_ROW_2'].includes(error?.code);
 }
 
 function errorHandler(error, _req, res, _next) {

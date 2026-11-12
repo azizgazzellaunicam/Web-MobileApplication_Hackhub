@@ -1,7 +1,6 @@
 const express = require('express');
 const { getHackathonStatus } = require('./domain/hackathon-status');
 const { selectHighestScoreWinner } = require('./strategy/highest-score-winner');
-const { SqliteRepository } = require('./repository/sqlite-repository');
 const { UserRepository } = require('./repository/user-repository');
 const { HackathonRepository } = require('./repository/hackathon-repository');
 const { NotificationRepository } = require('./repository/notification-repository');
@@ -22,59 +21,12 @@ const { registerCompetitionRoutes } = require('./controller/competition-controll
 const { registerSupportRoutes } = require('./controller/support-controller');
 const { FakePaymentAdapter } = require('./adapter/fake-payment-adapter');
 const { FakeCalendarAdapter } = require('./adapter/fake-calendar-adapter');
-const { httpError } = require('./http/http-errors');
 const { createDatabase } = require('./database/connection');
 const { initializeSchema, migrateSchema } = require('./database/schema');
 const { validateStartupConfiguration, seedDemoData, cleanDemoData } = require('./database/seed');
 const { hashPassword, verifyPassword } = require('./security/password');
 const { createAuthMiddleware } = require('./middleware/auth');
 const { errorHandler, notFoundHandler } = require('./middleware/error-handler');
-
-const port = Number(process.env.PORT || 3000);
-const runtimeEnvironment = process.env.NODE_ENV || 'development';
-const database = createDatabase();
-initializeSchema(database);
-migrateSchema(database);
-const repository = new SqliteRepository(database);
-validateStartupConfiguration({ runtimeEnvironment, repository });
-seedDemoData({ runtimeEnvironment, repository, hashPassword });
-cleanDemoData({ runtimeEnvironment, repository });
-
-const userRepository = new UserRepository(database);
-const hackathonRepository = new HackathonRepository(database);
-const notificationRepository = new NotificationRepository(database);
-const teamRepository = new TeamRepository(database);
-const competitionRepository = new CompetitionRepository(database);
-const refreshTokenRepository = new RefreshTokenRepository(database);
-const supportRepository = new SupportRepository(database);
-const notificationService = new NotificationService(notificationRepository);
-const authService = new AuthService(userRepository, refreshTokenRepository, hashPassword, verifyPassword);
-const hackathonService = new HackathonService(hackathonRepository, statusOf);
-const teamService = new TeamService(teamRepository, notificationService);
-const paymentAdapter = new FakePaymentAdapter();
-const calendarAdapter = new FakeCalendarAdapter();
-const profileService = new ProfileService(userRepository);
-const competitionService = new CompetitionService(
-  competitionRepository,
-  statusOf,
-  selectHighestScoreWinner,
-  hackathonRepository,
-  paymentAdapter,
-  notificationService,
-);
-const { auth, authOptional, role } = createAuthMiddleware();
-
-function fail(status, message) {
-  throw httpError(status, message);
-}
-
-function validate(body, fields) {
-  for (const field of fields) {
-    if (typeof body[field] !== 'string' || !body[field].trim()) {
-      fail(400, `Il campo ${field} è obbligatorio.`);
-    }
-  }
-}
 
 function statusOf(hackathon) {
   return hackathon.status_override || getHackathonStatus(hackathon);
@@ -88,44 +40,81 @@ function hackathon(row) {
   };
 }
 
-const app = express();
-app.use(express.json({ limit: '20kb' }));
+async function createApp() {
+  const port = Number(process.env.PORT || 3000);
+  const runtimeEnvironment = process.env.NODE_ENV || 'development';
+  const database = createDatabase();
+  await initializeSchema(database);
+  await migrateSchema(database);
+  await validateStartupConfiguration({ runtimeEnvironment, database });
+  await seedDemoData({ runtimeEnvironment, database, hashPassword });
+  await cleanDemoData({ runtimeEnvironment, database });
 
-app.get('/health', (_req, res) => {
-  try {
-    database.prepare('SELECT 1').get();
-    res.json({ status: 'ok' });
-  } catch {
-    res.status(503).json({ status: 'unavailable' });
-  }
-});
-registerTeamRoutes({ app, auth, role, teamService });
-registerCompetitionRoutes({
-  app,
-  auth,
-  role,
-  competitionService,
-});
-registerSupportRoutes({
-  app,
-  auth,
-  role,
-  supportService: new SupportService(supportRepository, statusOf, calendarAdapter),
-});
-registerApiRoutes({
-  app,
-  auth,
-  authOptional,
-  role,
-  userRepository,
-  hackathon,
-  authService,
-  profileService,
-  notificationService,
-  hackathonService,
-  competitionService,
-});
-app.use(errorHandler);
-app.use(notFoundHandler);
+  const userRepository = new UserRepository(database);
+  const hackathonRepository = new HackathonRepository(database);
+  const notificationRepository = new NotificationRepository(database);
+  const teamRepository = new TeamRepository(database);
+  const competitionRepository = new CompetitionRepository(database);
+  const refreshTokenRepository = new RefreshTokenRepository(database);
+  const supportRepository = new SupportRepository(database);
+  const notificationService = new NotificationService(notificationRepository);
+  const authService = new AuthService(userRepository, refreshTokenRepository, hashPassword, verifyPassword);
+  const hackathonService = new HackathonService(hackathonRepository, statusOf);
+  const teamService = new TeamService(teamRepository, notificationService);
+  const paymentAdapter = new FakePaymentAdapter();
+  const calendarAdapter = new FakeCalendarAdapter();
+  const profileService = new ProfileService(userRepository);
+  const competitionService = new CompetitionService(
+    competitionRepository,
+    statusOf,
+    selectHighestScoreWinner,
+    hackathonRepository,
+    paymentAdapter,
+    notificationService,
+  );
+  const { auth, authOptional, role } = createAuthMiddleware();
 
-module.exports = { app, database, refreshTokenRepository, port };
+  const app = express();
+  app.use(express.json({ limit: '20kb' }));
+
+  app.get('/health', async (_req, res) => {
+    try {
+      await database.query('SELECT 1');
+      res.json({ status: 'ok' });
+    } catch {
+      res.status(503).json({ status: 'unavailable' });
+    }
+  });
+  registerTeamRoutes({ app, auth, role, teamService });
+  registerCompetitionRoutes({
+    app,
+    auth,
+    role,
+    competitionService,
+  });
+  registerSupportRoutes({
+    app,
+    auth,
+    role,
+    supportService: new SupportService(supportRepository, statusOf, calendarAdapter),
+  });
+  registerApiRoutes({
+    app,
+    auth,
+    authOptional,
+    role,
+    userRepository,
+    hackathon,
+    authService,
+    profileService,
+    notificationService,
+    hackathonService,
+    competitionService,
+  });
+  app.use(errorHandler);
+  app.use(notFoundHandler);
+
+  return { app, database, refreshTokenRepository, port };
+}
+
+module.exports = { createApp };

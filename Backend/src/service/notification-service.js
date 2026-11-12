@@ -5,7 +5,7 @@ class NotificationService {
     this.repository = repository;
   }
 
-  create(userId, type, title, message, entityType = null, entityId = null) {
+  async create(userId, type, title, message, entityType = null, entityId = null) {
     return this.repository.create({
       userId,
       type,
@@ -16,17 +16,17 @@ class NotificationService {
     });
   }
 
-  listForUser(userId) {
-    this.repository.syncVictories(userId);
+  async listForUser(userId) {
+    await this.repository.syncVictories(userId);
     return this.repository.listForUser(userId);
   }
 
-  unreadCount(userId) {
-    this.repository.syncVictories(userId);
+  async unreadCount(userId) {
+    await this.repository.syncVictories(userId);
     return this.repository.countUnread(userId);
   }
 
-  markRead(userId, notificationId) {
+  async markRead(userId, notificationId) {
     if (!Number.isInteger(notificationId) || notificationId < 1) {
       throw httpError(HttpStatus.BAD_REQUEST, 'Notifica non valida.');
     }

@@ -1,38 +1,37 @@
 const assert = require('node:assert/strict');
 const jwt = require('jsonwebtoken');
 const test = require('node:test');
-const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
+const { applyDefaultDatabaseEnvironment, createInitializedDatabase, resetDatabase } = require('./helpers/mariadb-test-utils');
 
-const databasePath = path.join(os.tmpdir(), `hackhub-test-${process.pid}-${Date.now()}.sqlite`);
 process.env.NODE_ENV = 'test';
 process.env.HACKHUB_SEED_DEMO = 'true';
 process.env.HACKHUB_DEMO_USER_PASSWORD = 'test-user-demo-password-2026';
 process.env.HACKHUB_DEMO_ORGANIZER_PASSWORD = 'test-organizer-demo-password-2026';
 process.env.HACKHUB_DEMO_JUDGE_PASSWORD = 'test-judge-demo-password-2026';
 process.env.HACKHUB_DEMO_MENTOR_PASSWORD = 'test-mentor-demo-password-2026';
-process.env.HACKHUB_DB_PATH = databasePath;
 process.env.HACKHUB_JWT_SECRET = 'test-secret-that-is-at-least-32-characters-long';
 process.env.HACKHUB_ACCESS_TOKEN_TTL = '2h';
 process.env.HACKHUB_REFRESH_TOKEN_TTL_SECONDS = '3600';
-const { app, database } = require('../src/app');
+applyDefaultDatabaseEnvironment();
+const { createApp } = require('../src/app');
 let server;
 let baseUrl;
+let database;
 let databaseClosed = false;
 
-test.before(() => {
-  server = app.listen(0);
+test.before(async () => {
+  const resetConnection = await createInitializedDatabase();
+  await resetDatabase(resetConnection);
+  await resetConnection.end();
+  const initialized = await createApp();
+  database = initialized.database;
+  server = initialized.app.listen(0);
   baseUrl = `http://127.0.0.1:${server.address().port}`;
 });
 
-test.after(() => {
+test.after(async () => {
   server.close();
-  if (!databaseClosed) database.close();
-  for (const suffix of ['', '-shm', '-wal']) {
-    const file = `${databasePath}${suffix}`;
-    if (fs.existsSync(file)) fs.unlinkSync(file);
-  }
+  if (!databaseClosed) await database.end();
 });
 
 async function request(url, options = {}) {
@@ -187,7 +186,7 @@ test('health reports database availability without exposing internal errors', as
   assert.equal(healthy.response.status, 200);
   assert.deepEqual(healthy.body, { status: 'ok' });
 
-  database.close();
+  await database.end();
   databaseClosed = true;
   const unavailable = await request('/health');
   assert.equal(unavailable.response.status, 503);
