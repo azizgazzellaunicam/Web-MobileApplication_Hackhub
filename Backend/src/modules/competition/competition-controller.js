@@ -23,6 +23,19 @@ function registerCompetitionRoutes({ app, auth, role, competitionService }) {
   app.get('/api/hackathons/:id/ranking', auth, async (req, res) => {
     res.json(await competitionService.ranking(req.user.id, Number(req.params.id)));
   });
+  app.post('/api/hackathons/:id/winner/auto', auth, role('ORGANIZER'), async (req, res) => {
+    res.json(await competitionService.proclaimAuto(req.user.id, Number(req.params.id)));
+  });
+  app.post('/api/hackathons/:id/winner/:teamId', auth, role('ORGANIZER'), async (req, res) => {
+    res.json(await competitionService.proclaimManual(
+      req.user.id,
+      Number(req.params.id),
+      Number(req.params.teamId),
+    ));
+  });
+  app.get('/api/profile/wins', auth, async (req, res) => {
+    res.json(await competitionService.winsForUser(req.user.id));
+  });
 }
 
 module.exports = { registerCompetitionRoutes };

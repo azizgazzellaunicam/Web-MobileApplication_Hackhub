@@ -1,4 +1,4 @@
-const { BaseRepository } = require('./base-repository');
+const { BaseRepository } = require('../../repository/base-repository');
 
 class HackathonRepository extends BaseRepository {
   async findById(id) {
@@ -7,10 +7,6 @@ class HackathonRepository extends BaseRepository {
 
   async findStaff(id) {
     return this.all('SELECT user_id,role FROM hackathon_staff WHERE hackathon_id=?', [id]);
-  }
-
-  async findUserWithRole(id, role) {
-    return this.one('SELECT id FROM users WHERE id=? AND role=?', [id, role]);
   }
 
   async list() {
@@ -33,20 +29,8 @@ class HackathonRepository extends BaseRepository {
     `, [userId]);
   }
 
-  async listStaff() {
-    return this.all("SELECT id,name,email,role FROM users WHERE role IN ('JUDGE','MENTOR') ORDER BY role,name");
-  }
-
-  async teamForUser(userId) {
-    return this.one('SELECT team_id FROM team_members WHERE user_id=?', [userId]);
-  }
-
-  async assignmentForUser(userId) {
+  async assignmentsForUser(userId) {
     return this.all('SELECT hackathon_id,role FROM hackathon_staff WHERE user_id=?', [userId]);
-  }
-
-  async isRegistered(hackathonId, teamId) {
-    return this.one('SELECT 1 FROM registrations WHERE hackathon_id=? AND team_id=?', [hackathonId, teamId]);
   }
 
   async assignStaff(hackathonId, userId, role) {
@@ -75,57 +59,6 @@ class HackathonRepository extends BaseRepository {
       await repository.assignStaff(result.lastInsertRowid, input.mentorId, 'MENTOR');
       return repository.findById(result.lastInsertRowid);
     });
-  }
-
-  async submissions(hackathonId) {
-    return this.all('SELECT id,team_id FROM submissions WHERE hackathon_id=?', [hackathonId]);
-  }
-
-  async hasEvaluation(submissionId) {
-    return this.one('SELECT 1 FROM evaluations WHERE submission_id=?', [submissionId]);
-  }
-
-  async ranking(hackathonId) {
-    return this.all(`
-      SELECT t.id AS team_id, t.name AS team_name, AVG(e.score) AS average_score
-      FROM submissions s
-      JOIN teams t ON t.id=s.team_id
-      JOIN evaluations e ON e.submission_id=s.id
-      WHERE s.hackathon_id=? GROUP BY t.id,t.name
-    `, [hackathonId]);
-  }
-
-  async isTeamRegistered(hackathonId, teamId) {
-    return this.one('SELECT 1 FROM registrations WHERE hackathon_id=? AND team_id=?', [hackathonId, teamId]);
-  }
-
-  async submissionForTeam(hackathonId, teamId) {
-    return this.one('SELECT id FROM submissions WHERE hackathon_id=? AND team_id=?', [hackathonId, teamId]);
-  }
-
-  async teamMembers(teamId) {
-    return this.all('SELECT user_id FROM team_members WHERE team_id=?', [teamId]);
-  }
-
-  async team(teamId) {
-    return this.one('SELECT name FROM teams WHERE id=?', [teamId]);
-  }
-
-  async proclaimWinner(hackathonId, teamId) {
-    return this.transaction(async (repository) => {
-      const result = await repository.run(
-        'UPDATE hackathons SET winner_team_id=? WHERE id=? AND winner_team_id IS NULL',
-        [teamId, hackathonId],
-      );
-      return result.changes > 0;
-    });
-  }
-
-  async clearWinner(hackathonId, teamId) {
-    await this.run(
-      'UPDATE hackathons SET winner_team_id=NULL WHERE id=? AND winner_team_id=?',
-      [hackathonId, teamId],
-    );
   }
 
   async updateStatus(id, status) {

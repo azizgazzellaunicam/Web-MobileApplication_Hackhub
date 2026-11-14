@@ -27,4 +27,8 @@ function getHackathonStatus(hackathon, now = Date.now()) {
   return HackathonStatus.EVALUATION;
 }
 
-module.exports = { HackathonStatus, getHackathonStatus };
+function resolveHackathonStatus(hackathon, winnerTeamId = null) {
+  return hackathon.status_override || getHackathonStatus({ ...hackathon, winner_team_id: winnerTeamId });
+}
+
+module.exports = { HackathonStatus, getHackathonStatus, resolveHackathonStatus };

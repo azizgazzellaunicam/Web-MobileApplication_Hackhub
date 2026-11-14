@@ -1,23 +1,14 @@
-const { HttpStatus, httpError } = require('../http/http-errors');
-const { HackathonStatus } = require('../domain/hackathon-status');
+const { HttpStatus, httpError } = require('../../http/http-errors');
+const { HackathonStatus } = require('../../domain/hackathon-status');
 
 class HackathonService {
-  constructor(repository, statusOf) {
+  constructor(repository, identityDirectory) {
     this.repository = repository;
-    this.statusOf = statusOf;
+    this.identityDirectory = identityDirectory;
   }
 
-  async list(userId) {
-    const team = userId ? await this.repository.teamForUser(userId) : null;
-    const assignments = userId ? await this.repository.assignmentForUser(userId) : [];
-    const assignedById = new Map(assignments.map((assignment) => [assignment.hackathon_id, assignment.role]));
-    const hackathons = await this.repository.list();
-    return Promise.all(hackathons.map(async (item) => ({
-      ...item,
-      is_registered: Boolean(team && await this.repository.isRegistered(item.id, team.team_id)),
-      is_winner: Boolean(team && item.winner_team_id === team.team_id),
-      assigned_role: assignedById.get(item.id) || null,
-    })));
+  async list() {
+    return this.repository.list();
   }
 
   async detail(id) {
@@ -26,17 +17,16 @@ class HackathonService {
     return item;
   }
 
-  async assigned(userId) {
+  async listAssigned(userId) {
     return this.repository.listAssigned(userId);
   }
 
-  async evaluation(userId) {
-    return (await this.repository.listEvaluation(userId))
-      .filter((item) => this.statusOf(item) === 'VALUTAZIONE');
+  async listEvaluation(userId) {
+    return this.repository.listEvaluation(userId);
   }
 
   async staff() {
-    return this.repository.listStaff();
+    return this.identityDirectory.listStaffCandidates();
   }
 
   async assignStaff(hackathonId, organizerId, input) {
@@ -46,7 +36,7 @@ class HackathonService {
     }
     const role = input?.role;
     if (!['JUDGE', 'MENTOR'].includes(role)) throw httpError(HttpStatus.BAD_REQUEST, 'Ruolo staff non valido.');
-    const member = await this.repository.findUserWithRole(Number(input.userId), role);
+    const member = await this.identityDirectory.findUserWithRole(Number(input.userId), role);
     if (!member) throw httpError(HttpStatus.BAD_REQUEST, 'L’utente non ha il ruolo richiesto.');
     if ((await this.repository.findStaff(hackathonId)).some((item) => item.user_id === member.id && item.role === role)) {
       throw httpError(HttpStatus.CONFLICT, 'Utente già assegnato a questo hackathon.');
@@ -56,8 +46,8 @@ class HackathonService {
 
   async create(organizerId, input = {}) {
     this.validateDetails(input);
-    const judge = await this.repository.findUserWithRole(Number(input.judgeId), 'JUDGE');
-    const mentor = await this.repository.findUserWithRole(Number(input.mentorId), 'MENTOR');
+    const judge = await this.identityDirectory.findUserWithRole(Number(input.judgeId), 'JUDGE');
+    const mentor = await this.identityDirectory.findUserWithRole(Number(input.mentorId), 'MENTOR');
     if (!judge || !mentor) throw httpError(HttpStatus.BAD_REQUEST, 'È necessario assegnare almeno un giudice e un mentore validi.');
     return this.repository.create({
       ...input,
@@ -128,8 +118,8 @@ class HackathonService {
       mentorId: input.mentorId ?? currentMentor?.user_id,
     };
     this.validateDetails(merged);
-    const judge = await this.repository.findUserWithRole(Number(merged.judgeId), 'JUDGE');
-    const mentor = await this.repository.findUserWithRole(Number(merged.mentorId), 'MENTOR');
+    const judge = await this.identityDirectory.findUserWithRole(Number(merged.judgeId), 'JUDGE');
+    const mentor = await this.identityDirectory.findUserWithRole(Number(merged.mentorId), 'MENTOR');
     if (!judge || !mentor) throw httpError(HttpStatus.BAD_REQUEST, 'Giudice o mentore non validi.');
     return this.repository.update(id, {
       ...merged,

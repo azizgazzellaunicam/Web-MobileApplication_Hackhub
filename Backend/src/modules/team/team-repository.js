@@ -1,28 +1,12 @@
-const { BaseRepository } = require('./base-repository');
+const { BaseRepository } = require('../../repository/base-repository');
 
 class TeamRepository extends BaseRepository {
-  async listForUser(userId) {
-    const nowIso = new Date().toISOString();
-    return this.all(`
-      SELECT t.id, t.name, GROUP_CONCAT(u.name ORDER BY u.name SEPARATOR ',') AS members,
-        NOT EXISTS (
-          SELECT 1
-          FROM registrations r
-          JOIN hackathons h ON h.id=r.hackathon_id
-          WHERE r.team_id=t.id
-            AND h.start_date <= ?
-        ) AS can_leave
-      FROM teams t JOIN team_members tm ON tm.team_id=t.id JOIN users u ON u.id=tm.user_id
-      WHERE t.id IN (SELECT team_id FROM team_members WHERE user_id=?) GROUP BY t.id
-    `, [nowIso, userId]);
+  async listTeams() {
+    return this.all('SELECT id,name FROM teams ORDER BY name');
   }
 
-  async listAll() {
-    return this.all(`
-      SELECT t.id,t.name,GROUP_CONCAT(u.name ORDER BY u.name SEPARATOR ',') AS members
-      FROM teams t JOIN team_members tm ON tm.team_id=t.id JOIN users u ON u.id=tm.user_id
-      GROUP BY t.id ORDER BY t.name
-    `);
+  async listMemberships() {
+    return this.all('SELECT team_id,user_id FROM team_members');
   }
 
   async findById(id) {
@@ -37,16 +21,9 @@ class TeamRepository extends BaseRepository {
     return this.one('SELECT 1 FROM team_members WHERE team_id=? AND user_id=?', [teamId, userId]);
   }
 
-  async hasStartedRegistration(teamId) {
-    const nowIso = new Date().toISOString();
-    return this.one(`
-      SELECT 1
-      FROM registrations r
-      JOIN hackathons h ON h.id=r.hackathon_id
-      WHERE r.team_id=?
-        AND h.start_date <= ?
-      LIMIT 1
-    `, [teamId, nowIso]);
+  async memberIds(teamId) {
+    const rows = await this.all('SELECT user_id FROM team_members WHERE team_id=?', [teamId]);
+    return rows.map((row) => row.user_id);
   }
 
   async removeMember(teamId, userId) {
@@ -58,23 +35,9 @@ class TeamRepository extends BaseRepository {
     return Number(row.count);
   }
 
-  async hasProtectedTeamReferences(teamId) {
-    return this.one(`
-      SELECT 1
-      FROM support_requests
-      WHERE team_id=?
-      UNION
-      SELECT 1
-      FROM hackathons
-      WHERE winner_team_id=?
-      LIMIT 1
-    `, [teamId, teamId]);
-  }
-
   async deleteTeamIfEmpty(teamId) {
     return this.transaction(async (repository) => {
       if (await repository.countMembers(teamId)) return false;
-      if (await repository.hasProtectedTeamReferences(teamId)) return false;
       const result = await repository.run('DELETE FROM teams WHERE id=?', [teamId]);
       return result.changes > 0;
     });
@@ -88,10 +51,6 @@ class TeamRepository extends BaseRepository {
     });
   }
 
-  async findUserByEmail(email) {
-    return this.one('SELECT id FROM users WHERE email=?', [email]);
-  }
-
   async findInvitation(id, userId) {
     return this.one(`
       SELECT * FROM team_invitations
@@ -101,8 +60,8 @@ class TeamRepository extends BaseRepository {
 
   async listInvitations(userId) {
     return this.all(`
-      SELECT i.*, t.name AS team_name, u.email AS invited_email
-      FROM team_invitations i JOIN teams t ON t.id=i.team_id JOIN users u ON u.id=i.invited_user_id
+      SELECT i.*, t.name AS team_name
+      FROM team_invitations i JOIN teams t ON t.id=i.team_id
       WHERE i.invited_user_id=? ORDER BY i.sent_at DESC
     `, [userId]);
   }

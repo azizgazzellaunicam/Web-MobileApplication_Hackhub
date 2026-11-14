@@ -1,4 +1,4 @@
-const { BaseRepository } = require('./base-repository');
+const { BaseRepository } = require('../../repository/base-repository');
 
 class NotificationRepository extends BaseRepository {
   async create(input) {
@@ -9,22 +9,11 @@ class NotificationRepository extends BaseRepository {
     return this.one('SELECT * FROM notifications WHERE id=?', [result.lastInsertRowid]);
   }
 
-  async syncVictories(userId) {
-    await this.run(`
-      INSERT INTO notifications(user_id,type,title,message,entity_type,entity_id)
-      SELECT tm.user_id, 'VICTORY', 'Hai vinto un hackathon',
-             CONCAT('Il tuo team ', t.name, ' ha vinto ', h.name, '.'),
-             'HACKATHON', h.id
-      FROM team_members tm
-      JOIN teams t ON t.id=tm.team_id
-      JOIN hackathons h ON h.winner_team_id=tm.team_id
-      WHERE tm.user_id=?
-        AND NOT EXISTS (
-          SELECT 1 FROM notifications n
-          WHERE n.user_id=tm.user_id AND n.type='VICTORY'
-            AND n.entity_type='HACKATHON' AND n.entity_id=h.id
-        )
-    `, [userId]);
+  async hasVictoryFor(userId, hackathonId) {
+    return Boolean(await this.one(`
+      SELECT 1 FROM notifications
+      WHERE user_id=? AND type='VICTORY' AND entity_type='HACKATHON' AND entity_id=?
+    `, [userId, hackathonId]));
   }
 
   async listForUser(userId) {

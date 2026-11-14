@@ -1,67 +1,31 @@
-async function validateStartupConfiguration({ runtimeEnvironment, database }) {
-  if (runtimeEnvironment === 'production' && process.env.HACKHUB_SEED_DEMO === 'true') {
-    throw new Error('HACKHUB_SEED_DEMO non può essere abilitato in produzione.');
-  }
-  if (runtimeEnvironment === 'production') {
-    const [demoAccount] = await database.execute(`
-      SELECT 1 AS found
-      FROM users
-      WHERE email IN (?, ?, ?, ?)
-      LIMIT 1
-    `, ['mario@hackhub.it', 'admin@hackhub.it', 'giudice@hackhub.it', 'mentore@hackhub.it']);
-    if (demoAccount.length) throw new Error('Account demo rilevato nel database di produzione.');
-  }
-  if (process.env.HACKHUB_SEED_DEMO === 'true'
-    && !['development', 'test'].includes(runtimeEnvironment)) {
-    throw new Error('Il seed demo richiede NODE_ENV=development o NODE_ENV=test.');
-  }
+const { assertDemoSeedAllowed, isDemoSeedEnabled } = require('./demo-settings');
+
+async function validateStartupConfiguration({ runtimeEnvironment }) {
+  assertDemoSeedAllowed(runtimeEnvironment);
 }
 
-async function seedDemoData({ runtimeEnvironment, database, hashPassword }) {
-  if (!['development', 'test'].includes(runtimeEnvironment)
-    || process.env.HACKHUB_SEED_DEMO === 'false') return;
-  const demoPasswords = {
-    user: process.env.HACKHUB_DEMO_USER_PASSWORD || 'password',
-    organizer: process.env.HACKHUB_DEMO_ORGANIZER_PASSWORD || 'password',
-    judge: process.env.HACKHUB_DEMO_JUDGE_PASSWORD || 'password',
-    mentor: process.env.HACKHUB_DEMO_MENTOR_PASSWORD || 'password',
-  };
-  if (Object.values(demoPasswords).some((password) => !password || password.length < 8)) {
-    throw new Error('Ogni password demo deve contenere almeno 8 caratteri.');
-  }
+async function findDemoUserId(identityDirectory, email) {
+  const user = await identityDirectory.findIdByEmail(email);
+  return user?.id ?? null;
+}
 
-  const [existingUsersRows] = await database.execute('SELECT COUNT(*) AS count FROM users');
-  const existingUsers = Number(existingUsersRows[0].count);
-  if (existingUsers) {
-    const updateSql = 'UPDATE users SET email=?, password_hash=? WHERE email=?';
-    await database.execute(updateSql, ['mario@hackhub.it', hashPassword(demoPasswords.user), 'mario.demo@demo.hackhub.local']);
-    await database.execute(updateSql, ['admin@hackhub.it', hashPassword(demoPasswords.organizer), 'admin.demo@demo.hackhub.local']);
-    await database.execute(updateSql, ['giudice@hackhub.it', hashPassword(demoPasswords.judge), 'giudice.demo@demo.hackhub.local']);
-    await database.execute(updateSql, ['mentore@hackhub.it', hashPassword(demoPasswords.mentor), 'mentore.demo@demo.hackhub.local']);
-    await database.execute(updateSql, ['mario@hackhub.it', hashPassword(demoPasswords.user), 'mario@hackhub.it']);
-    await database.execute(updateSql, ['admin@hackhub.it', hashPassword(demoPasswords.organizer), 'admin@hackhub.it']);
-    await database.execute(updateSql, ['giudice@hackhub.it', hashPassword(demoPasswords.judge), 'giudice@hackhub.it']);
-    await database.execute(updateSql, ['mentore@hackhub.it', hashPassword(demoPasswords.mentor), 'mentore@hackhub.it']);
-    return;
+async function seedDemoData({ runtimeEnvironment, database, identityDirectory }) {
+  if (!isDemoSeedEnabled(runtimeEnvironment)) return;
+
+  const [existingDemoRows] = await database.execute("SELECT 1 FROM hackathons WHERE name='HackHub Demo - Iscrizioni' LIMIT 1");
+  if (existingDemoRows.length) return;
+
+  const mario = await findDemoUserId(identityDirectory, 'mario@hackhub.it');
+  const admin = await findDemoUserId(identityDirectory, 'admin@hackhub.it');
+  const judge = await findDemoUserId(identityDirectory, 'giudice@hackhub.it');
+  const mentor = await findDemoUserId(identityDirectory, 'mentore@hackhub.it');
+  if (!mario || !admin || !judge || !mentor) {
+    throw new Error('Utenti demo non disponibili nel servizio Identity.');
   }
 
   const connection = await database.getConnection();
   try {
     await connection.beginTransaction();
-    await connection.execute('INSERT INTO users(name,email,password_hash,role) VALUES (?,?,?,?)', ['Mario Demo', 'mario@hackhub.it', hashPassword(demoPasswords.user), 'USER']);
-    await connection.execute('INSERT INTO users(name,email,password_hash,role) VALUES (?,?,?,?)', ['Admin Demo', 'admin@hackhub.it', hashPassword(demoPasswords.organizer), 'ORGANIZER']);
-    await connection.execute('INSERT INTO users(name,email,password_hash,role) VALUES (?,?,?,?)', ['Giudice Demo', 'giudice@hackhub.it', hashPassword(demoPasswords.judge), 'JUDGE']);
-    await connection.execute('INSERT INTO users(name,email,password_hash,role) VALUES (?,?,?,?)', ['Mentore Demo', 'mentore@hackhub.it', hashPassword(demoPasswords.mentor), 'MENTOR']);
-
-    const [marioRows] = await connection.execute('SELECT id FROM users WHERE email=?', ['mario@hackhub.it']);
-    const [adminRows] = await connection.execute('SELECT id FROM users WHERE email=?', ['admin@hackhub.it']);
-    const [judgeRows] = await connection.execute('SELECT id FROM users WHERE email=?', ['giudice@hackhub.it']);
-    const [mentorRows] = await connection.execute('SELECT id FROM users WHERE email=?', ['mentore@hackhub.it']);
-
-    const mario = marioRows[0].id;
-    const admin = adminRows[0].id;
-    const judge = judgeRows[0].id;
-    const mentor = mentorRows[0].id;
 
     const [teamResult] = await connection.execute('INSERT INTO teams(name) VALUES(?)', ['Team Alpha']);
     const team = teamResult.insertId;

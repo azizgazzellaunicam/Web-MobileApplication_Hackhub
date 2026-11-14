@@ -1,4 +1,6 @@
-const { HttpStatus, httpError } = require('../http/http-errors');
+const { HttpStatus, httpError } = require('../../http/http-errors');
+
+const collator = new Intl.Collator('it', { sensitivity: 'base' });
 
 function isMembershipConflict(error) {
   return error?.code === 'ER_DUP_ENTRY'
@@ -6,25 +8,82 @@ function isMembershipConflict(error) {
 }
 
 class TeamService {
-  constructor(repository, notificationService) {
+  constructor(repository, notificationService, identityDirectory, competitionDirectory, hackathonDirectory) {
     this.repository = repository;
     this.notificationService = notificationService;
+    this.identityDirectory = identityDirectory;
+    this.competitionDirectory = competitionDirectory;
+    this.hackathonDirectory = hackathonDirectory;
   }
 
-  async listForUser(userId) { return this.repository.listForUser(userId); }
-  async listAll() { return this.repository.listAll(); }
-  async listInvitations(userId) { return this.repository.listInvitations(userId); }
+  membersLabel(memberIds, profiles) {
+    return memberIds
+      .map((id) => profiles.get(id)?.name)
+      .filter(Boolean)
+      .sort(collator.compare)
+      .join(',');
+  }
+
+  async hasStartedRegistration(teamId) {
+    for (const hackathonId of await this.competitionDirectory.registeredHackathonIds(teamId)) {
+      if (await this.hackathonDirectory.hasStarted(hackathonId)) return true;
+    }
+    return false;
+  }
+
+  async listForUser(userId) {
+    const membership = await this.repository.findByMember(userId);
+    if (!membership) return [];
+    const team = await this.repository.findById(membership.team_id);
+    const memberIds = await this.repository.memberIds(team.id);
+    const profiles = await this.identityDirectory.findProfiles(memberIds);
+    return [{
+      id: team.id,
+      name: team.name,
+      members: this.membersLabel(memberIds, profiles),
+      can_leave: await this.hasStartedRegistration(team.id) ? 0 : 1,
+    }];
+  }
+
+  async listAll() {
+    const teams = await this.repository.listTeams();
+    const memberships = await this.repository.listMemberships();
+    const profiles = await this.identityDirectory.findProfiles(memberships.map((row) => row.user_id));
+    const result = [];
+    for (const team of teams) {
+      const memberIds = memberships.filter((row) => row.team_id === team.id).map((row) => row.user_id);
+      if (!memberIds.length) continue;
+      result.push({ id: team.id, name: team.name, members: this.membersLabel(memberIds, profiles) });
+    }
+    return result;
+  }
+
+  async listInvitations(userId) {
+    const invitedUser = await this.identityDirectory.findById(userId);
+    const invitations = await this.repository.listInvitations(userId);
+    return invitations.map((invitation) => ({ ...invitation, invited_email: invitedUser?.email ?? null }));
+  }
 
   async leave(teamId, userId) {
     if (!await this.repository.findMember(teamId, userId)) {
       throw httpError(HttpStatus.NOT_FOUND, 'Non appartieni a questo team.');
     }
-    if (await this.repository.hasStartedRegistration(teamId)) {
+    if (await this.hasStartedRegistration(teamId)) {
       throw httpError(HttpStatus.CONFLICT, 'Non puoi uscire dal team: un hackathon a cui siete iscritti è già iniziato.');
     }
     await this.repository.removeMember(teamId, userId);
-    await this.repository.deleteTeamIfEmpty(teamId);
+    await this.deleteTeamIfEmpty(teamId);
     return { message: 'Hai lasciato il team.' };
+  }
+
+  // A team still referenced by non-cascading FKs (support requests, winners) is kept.
+  async deleteTeamIfEmpty(teamId) {
+    try {
+      return await this.repository.deleteTeamIfEmpty(teamId);
+    } catch (error) {
+      if (error?.code === 'ER_ROW_IS_REFERENCED_2') return false;
+      throw error;
+    }
   }
 
   async create(userId, userName, name) {
@@ -46,7 +105,7 @@ class TeamService {
     if (!await this.repository.findMember(teamId, inviterId)) {
       throw httpError(HttpStatus.FORBIDDEN, 'Solo un membro del team può inviare inviti.');
     }
-    const invited = await this.repository.findUserByEmail(email);
+    const invited = await this.identityDirectory.findIdByEmail(email);
     if (!invited) throw httpError(HttpStatus.NOT_FOUND, 'Utente invitato non trovato.');
     if (await this.repository.findByMember(invited.id)) throw httpError(HttpStatus.CONFLICT, 'L’utente appartiene già a un team.');
     if (await this.repository.hasPendingInvitation(teamId, invited.id)) throw httpError(HttpStatus.CONFLICT, 'Invito già pendente.');

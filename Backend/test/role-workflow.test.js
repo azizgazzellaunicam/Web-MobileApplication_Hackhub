@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { applyDefaultDatabaseEnvironment, createInitializedDatabase, resetDatabase } = require('./helpers/mariadb-test-utils');
+const { applyDefaultDatabaseEnvironment, createInitializedDatabase, createInitializedIdentityDatabase, resetDatabase, resetIdentityDatabase, startIdentityService } = require('./helpers/mariadb-test-utils');
 process.env.NODE_ENV = 'test';
 process.env.HACKHUB_SEED_DEMO = 'true';
 process.env.HACKHUB_DEMO_USER_PASSWORD = 'test-user-demo-password-2026';
@@ -13,12 +13,21 @@ applyDefaultDatabaseEnvironment();
 const { createApp } = require('../src/app');
 let server;
 let baseUrl;
+let identityBaseUrl;
+let identityService;
 let database;
+let identityDatabase;
 
 test.before(async () => {
   const resetConnection = await createInitializedDatabase();
   await resetDatabase(resetConnection);
   await resetConnection.end();
+  const identityResetConnection = await createInitializedIdentityDatabase();
+  await resetIdentityDatabase(identityResetConnection);
+  await identityResetConnection.end();
+  identityService = await startIdentityService();
+  identityBaseUrl = identityService.baseUrl;
+  identityDatabase = identityService.database;
   const initialized = await createApp();
   database = initialized.database;
   server = initialized.app.listen(0);
@@ -27,12 +36,14 @@ test.before(async () => {
 
 test.after(async () => {
   server.close();
+  await identityService.close();
   await database.end();
 });
 
 async function request(url, options = {}) {
   const { headers = {}, ...fetchOptions } = options;
-  const response = await fetch(`${baseUrl}${url}`, {
+  const origin = url.startsWith('/api/auth/') ? identityBaseUrl : baseUrl;
+  const response = await fetch(`${origin}${url}`, {
     ...fetchOptions,
     headers: { 'content-type': 'application/json', ...headers },
   });
@@ -179,7 +190,7 @@ test('organizer, participant, judge, and mentor complete an event workflow', asy
   assert.equal(created.response.status, 201);
   const hackathonId = created.body.id;
 
-  const [secondJudgeResult] = await database.execute(
+  const [secondJudgeResult] = await identityDatabase.execute(
     'INSERT INTO users(name,email,password_hash,role) VALUES(?,?,?,?)',
     ['Workflow Secondary Judge', `judge-${Date.now()}@example.test`, 'unused-test-hash', 'JUDGE'],
   );

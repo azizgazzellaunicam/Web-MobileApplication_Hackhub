@@ -1,22 +1,13 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { TeamRepository } = require('../src/repository/team-repository');
-const { TeamService } = require('../src/service/team-service');
+const { TeamRepository } = require('../src/modules/team/team-repository');
+const { TeamService } = require('../src/modules/team/team-service');
 const { createInitializedDatabase, resetDatabase } = require('./helpers/mariadb-test-utils');
-
-async function seedUsers(database) {
-  await database.execute(`
-    INSERT INTO users(id,name,email,password_hash) VALUES
-      (1,'First','first@example.test','hash'),
-      (2,'Second','second@example.test','hash')
-  `);
-}
 
 test('enforces one team per user at the database level', async () => {
   const database = await createInitializedDatabase();
   try {
     await resetDatabase(database);
-    await seedUsers(database);
     const teams = new TeamRepository(database);
     const first = await teams.create('First team', 1);
     await teams.create('Second team', 2);

@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const jwt = require('jsonwebtoken');
 const test = require('node:test');
-const { applyDefaultDatabaseEnvironment, createInitializedDatabase, resetDatabase } = require('./helpers/mariadb-test-utils');
+const { applyDefaultDatabaseEnvironment, createInitializedDatabase, createInitializedIdentityDatabase, resetDatabase, resetIdentityDatabase, startIdentityService } = require('./helpers/mariadb-test-utils');
 
 process.env.NODE_ENV = 'test';
 process.env.HACKHUB_SEED_DEMO = 'true';
@@ -16,6 +16,8 @@ applyDefaultDatabaseEnvironment();
 const { createApp } = require('../src/app');
 let server;
 let baseUrl;
+let identityBaseUrl;
+let identityService;
 let database;
 let databaseClosed = false;
 
@@ -23,6 +25,11 @@ test.before(async () => {
   const resetConnection = await createInitializedDatabase();
   await resetDatabase(resetConnection);
   await resetConnection.end();
+  const identityResetConnection = await createInitializedIdentityDatabase();
+  await resetIdentityDatabase(identityResetConnection);
+  await identityResetConnection.end();
+  identityService = await startIdentityService();
+  identityBaseUrl = identityService.baseUrl;
   const initialized = await createApp();
   database = initialized.database;
   server = initialized.app.listen(0);
@@ -31,11 +38,13 @@ test.before(async () => {
 
 test.after(async () => {
   server.close();
+  await identityService.close();
   if (!databaseClosed) await database.end();
 });
 
 async function request(url, options = {}) {
-  const response = await fetch(`${baseUrl}${url}`, {
+  const origin = url.startsWith('/api/auth/') ? identityBaseUrl : baseUrl;
+  const response = await fetch(`${origin}${url}`, {
     headers: { 'content-type': 'application/json', ...(options.headers || {}) },
     ...options,
   });

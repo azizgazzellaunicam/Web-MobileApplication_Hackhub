@@ -1,77 +1,98 @@
 const express = require('express');
-const { getHackathonStatus } = require('./domain/hackathon-status');
 const { selectHighestScoreWinner } = require('./strategy/highest-score-winner');
-const { UserRepository } = require('./repository/user-repository');
-const { HackathonRepository } = require('./repository/hackathon-repository');
-const { NotificationRepository } = require('./repository/notification-repository');
-const { TeamRepository } = require('./repository/team-repository');
-const { CompetitionRepository } = require('./repository/competition-repository');
-const { RefreshTokenRepository } = require('./repository/refresh-token-repository');
-const { SupportRepository } = require('./repository/support-repository');
-const { HackathonService } = require('./service/hackathon-service');
-const { AuthService } = require('./service/auth-service');
-const { NotificationService } = require('./service/notification-service');
-const { TeamService } = require('./service/team-service');
-const { CompetitionService } = require('./service/competition-service');
-const { SupportService } = require('./service/support-service');
-const { ProfileService } = require('./service/profile-service');
-const { registerApiRoutes } = require('./controller/api-controller');
-const { registerTeamRoutes } = require('./controller/team-controller');
-const { registerCompetitionRoutes } = require('./controller/competition-controller');
-const { registerSupportRoutes } = require('./controller/support-controller');
+const { HackathonGateway } = require('./gateway/hackathon-gateway');
 const { FakePaymentAdapter } = require('./adapter/fake-payment-adapter');
 const { FakeCalendarAdapter } = require('./adapter/fake-calendar-adapter');
 const { createDatabase } = require('./database/connection');
 const { initializeSchema, migrateSchema } = require('./database/schema');
 const { validateStartupConfiguration, seedDemoData, cleanDemoData } = require('./database/seed');
-const { hashPassword, verifyPassword } = require('./security/password');
 const { createAuthMiddleware } = require('./middleware/auth');
 const { errorHandler, notFoundHandler } = require('./middleware/error-handler');
 
-function statusOf(hackathon) {
-  return hackathon.status_override || getHackathonStatus(hackathon);
-}
+const { createHttpIdentityDirectory } = require('./modules/identity/http-identity-directory');
 
-function hackathon(row) {
-  return row && {
-    ...row,
-    status: statusOf(row),
-    status_override: row.status_override || null,
-  };
-}
+const { TeamRepository } = require('./modules/team/team-repository');
+const { TeamDirectory } = require('./modules/team/team-directory');
+const { TeamService } = require('./modules/team/team-service');
+const { registerTeamRoutes } = require('./modules/team/team-controller');
 
-async function createApp() {
-  const port = Number(process.env.PORT || 3000);
-  const runtimeEnvironment = process.env.NODE_ENV || 'development';
-  const database = createDatabase();
+const { HackathonRepository } = require('./modules/hackathon/hackathon-repository');
+const { HackathonDirectory } = require('./modules/hackathon/hackathon-directory');
+const { HackathonService } = require('./modules/hackathon/hackathon-service');
+const { registerHackathonRoutes } = require('./modules/hackathon/hackathon-controller');
+
+const { CompetitionRepository } = require('./modules/competition/competition-repository');
+const { CompetitionDirectory } = require('./modules/competition/competition-directory');
+const { CompetitionService } = require('./modules/competition/competition-service');
+const { registerCompetitionRoutes } = require('./modules/competition/competition-controller');
+
+const { SupportRepository } = require('./modules/support/support-repository');
+const { SupportService } = require('./modules/support/support-service');
+const { registerSupportRoutes } = require('./modules/support/support-controller');
+
+const { NotificationRepository } = require('./modules/notification/notification-repository');
+const { NotificationService } = require('./modules/notification/notification-service');
+const { registerNotificationRoutes } = require('./modules/notification/notification-controller');
+
+const { InboxRepository } = require('./modules/events/inbox-repository');
+const { InboxService } = require('./modules/events/inbox-service');
+const { registerEventRoutes } = require('./modules/events/inbox-controller');
+
+const { readServiceToken } = require('./security/service-token');
+
+async function createApp({ env = process.env } = {}) {
+  const port = Number(env.PORT || 3000);
+  const runtimeEnvironment = env.NODE_ENV || 'development';
+  const database = createDatabase(env);
   await initializeSchema(database);
   await migrateSchema(database);
-  await validateStartupConfiguration({ runtimeEnvironment, database });
-  await seedDemoData({ runtimeEnvironment, database, hashPassword });
+  await validateStartupConfiguration({ runtimeEnvironment });
+  const identityDirectory = createHttpIdentityDirectory(env);
+  await seedDemoData({ runtimeEnvironment, database, identityDirectory });
   await cleanDemoData({ runtimeEnvironment, database });
 
-  const userRepository = new UserRepository(database);
-  const hackathonRepository = new HackathonRepository(database);
-  const notificationRepository = new NotificationRepository(database);
   const teamRepository = new TeamRepository(database);
+  const teamDirectory = new TeamDirectory(teamRepository);
+
+  const hackathonRepository = new HackathonRepository(database);
+  const hackathonDirectory = new HackathonDirectory(hackathonRepository);
+  const hackathonService = new HackathonService(hackathonRepository, identityDirectory);
+
   const competitionRepository = new CompetitionRepository(database);
-  const refreshTokenRepository = new RefreshTokenRepository(database);
-  const supportRepository = new SupportRepository(database);
-  const notificationService = new NotificationService(notificationRepository);
-  const authService = new AuthService(userRepository, refreshTokenRepository, hashPassword, verifyPassword);
-  const hackathonService = new HackathonService(hackathonRepository, statusOf);
-  const teamService = new TeamService(teamRepository, notificationService);
-  const paymentAdapter = new FakePaymentAdapter();
-  const calendarAdapter = new FakeCalendarAdapter();
-  const profileService = new ProfileService(userRepository);
-  const competitionService = new CompetitionService(
+  const competitionDirectory = new CompetitionDirectory(competitionRepository);
+
+  // NotificationService and CompetitionService depend on each other: notifications read victories through the competition service.
+  let competitionService;
+  const notificationService = new NotificationService(
+    new NotificationRepository(database),
+    (userId) => competitionService.victoriesForUser(userId),
+  );
+  competitionService = new CompetitionService(
     competitionRepository,
-    statusOf,
+    hackathonDirectory,
+    teamDirectory,
+    identityDirectory,
     selectHighestScoreWinner,
-    hackathonRepository,
-    paymentAdapter,
+    new FakePaymentAdapter(),
     notificationService,
   );
+
+  const teamService = new TeamService(
+    teamRepository,
+    notificationService,
+    identityDirectory,
+    competitionDirectory,
+    hackathonDirectory,
+  );
+  const gateway = new HackathonGateway(hackathonService, hackathonDirectory, teamDirectory, competitionDirectory);
+  const supportService = new SupportService(
+    new SupportRepository(database),
+    hackathonDirectory,
+    teamDirectory,
+    competitionDirectory,
+    new FakeCalendarAdapter(),
+  );
+
   const { auth, authOptional, role } = createAuthMiddleware();
 
   const app = express();
@@ -86,35 +107,15 @@ async function createApp() {
     }
   });
   registerTeamRoutes({ app, auth, role, teamService });
-  registerCompetitionRoutes({
-    app,
-    auth,
-    role,
-    competitionService,
-  });
-  registerSupportRoutes({
-    app,
-    auth,
-    role,
-    supportService: new SupportService(supportRepository, statusOf, calendarAdapter),
-  });
-  registerApiRoutes({
-    app,
-    auth,
-    authOptional,
-    role,
-    userRepository,
-    hackathon,
-    authService,
-    profileService,
-    notificationService,
-    hackathonService,
-    competitionService,
-  });
+  registerHackathonRoutes({ app, auth, authOptional, role, hackathonService, gateway });
+  registerCompetitionRoutes({ app, auth, role, competitionService });
+  registerSupportRoutes({ app, auth, role, supportService });
+  registerNotificationRoutes({ app, auth, notificationService });
+  registerEventRoutes({ app, serviceToken: readServiceToken(env), inboxService: new InboxService(new InboxRepository(database)) });
   app.use(errorHandler);
   app.use(notFoundHandler);
 
-  return { app, database, refreshTokenRepository, port };
+  return { app, database, port };
 }
 
 module.exports = { createApp };
