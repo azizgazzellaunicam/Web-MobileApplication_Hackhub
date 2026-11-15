@@ -101,6 +101,12 @@ jobs:
         working-directory: Backend
         run: npm ci
 
+      - name: Prepare identity test database
+        env:
+          MYSQL_PWD: ci-root-password
+        run: |
+          mysql -h 127.0.0.1 -P 3306 -u root -e "CREATE DATABASE IF NOT EXISTS hackhub_identity_test; GRANT ALL PRIVILEGES ON hackhub_identity_test.* TO 'hackhub'@'%'; FLUSH PRIVILEGES;"
+
       - name: Run backend tests with coverage threshold
         working-directory: Backend
         run: npm run test:coverage

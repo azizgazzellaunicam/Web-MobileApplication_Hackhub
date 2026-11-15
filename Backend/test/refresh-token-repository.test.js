@@ -1,12 +1,12 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { RefreshTokenRepository } = require('../src/repository/refresh-token-repository');
-const { createInitializedDatabase, resetDatabase } = require('./helpers/mariadb-test-utils');
+const { RefreshTokenRepository } = require('../src/modules/identity/refresh-token-repository');
+const { createInitializedIdentityDatabase, resetIdentityDatabase } = require('./helpers/mariadb-test-utils');
 
 test('persists hashed refresh tokens and rotates them atomically', async () => {
-  const database = await createInitializedDatabase();
+  const database = await createInitializedIdentityDatabase();
   try {
-    await resetDatabase(database);
+    await resetIdentityDatabase(database);
     await database.execute(
       `INSERT INTO users(id,name,email,password_hash) VALUES(1,'Test','refresh@example.com','hash')`,
     );

@@ -1,12 +1,12 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { SessionRepository } = require('../src/repository/session-repository');
-const { createInitializedDatabase, resetDatabase } = require('./helpers/mariadb-test-utils');
+const { SessionRepository } = require('../src/modules/identity/session-repository');
+const { createInitializedIdentityDatabase, resetIdentityDatabase } = require('./helpers/mariadb-test-utils');
 
 test('persists valid sessions and removes expired sessions', async () => {
-  const database = await createInitializedDatabase();
+  const database = await createInitializedIdentityDatabase();
   try {
-    await resetDatabase(database);
+    await resetIdentityDatabase(database);
     await database.execute(`
       INSERT INTO users(id,name,email,password_hash) VALUES(1,'Test','test@example.com','hash')
     `);

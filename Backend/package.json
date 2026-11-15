@@ -8,6 +8,7 @@
   },
   "scripts": {
     "start": "node src/server.js",
+    "start:identity": "node src/identity-server.js",
     "test": "node --test --test-concurrency=1 \"test/*.test.js\"",
     "test:coverage": "node --test --test-concurrency=1 --experimental-test-coverage --test-coverage-lines=90 \"test/*.test.js\"",
     "db:migrate:sqlite": "node scripts/migrate-sqlite-to-mariadb.js"
