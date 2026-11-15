@@ -4,6 +4,16 @@ HackHub è una piattaforma per la gestione di hackathon, realizzata con Angular 
 
 ## Avvio locale (senza Docker)
 
+Il servizio Identity (`Backend/src/identity-server.js`) va avviato prima del backend: il backend lo interroga per gli utenti (`IDENTITY_SERVICE_URL`). Richiede un MariaDB dedicato (`hackhub_identity`), `HACKHUB_SERVICE_TOKEN` e `BACKEND_SERVICE_URL` (URL del monolite a cui consegnare gli eventi).
+
+Identity:
+
+```bash
+cd Backend
+npm install
+npm run start:identity
+```
+
 Backend:
 
 ```bash
@@ -26,7 +36,11 @@ Nel file `.env` (partendo da `.env.example`):
 
 - `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `DB_POOL_SIZE`
 - `DB_ROOT_PASSWORD` (richiesta da Docker Compose per il servizio MariaDB)
+- `IDENTITY_DB_NAME`, `IDENTITY_DB_USER`, `IDENTITY_DB_PASSWORD`, `IDENTITY_DB_ROOT_PASSWORD`, `IDENTITY_DB_PORT` (database dedicato di Identity, obbligatori in Docker Compose)
 - `HACKHUB_JWT_SECRET`
+- `HACKHUB_SERVICE_TOKEN` (almeno 32 caratteri; autentica le chiamate interne monolite → Identity)
+- `IDENTITY_SERVICE_URL` (URL di Identity per il backend; in Compose è impostata automaticamente)
+- `BACKEND_SERVICE_URL` (URL del monolite per Identity, usato per consegnare gli eventi; in Compose è impostata automaticamente)
 - `HACKHUB_ACCESS_TOKEN_TTL`
 - `HACKHUB_REFRESH_TOKEN_TTL_SECONDS`
 - `HACKHUB_JWT_ISSUER`
@@ -44,11 +58,13 @@ docker compose down
 
 Lo stack avvia:
 
-- `mariadb` con volume persistente `mariadb_data`;
-- `backend` collegato a MariaDB via nome servizio `mariadb`;
-- `frontend` (Nginx) che espone l’app Angular.
+- `mariadb` con volume persistente `mariadb_data`, per il dominio (team, hackathon, competizione, supporto, notifiche);
+- `identity-mariadb` con volume `identity_mariadb_data`, dedicato al solo servizio Identity (`hackhub_identity`);
+- `identity` (`src/identity-server.js`), che gestisce utenti, sessioni e token. È raggiungibile solo sulla rete Docker;
+- `backend` (monolite di dominio) collegato a `mariadb` e a `identity` tramite `IDENTITY_SERVICE_URL`;
+- `frontend` (Nginx) che espone l’app Angular. Nginx instrada `/api/auth/*` a `identity` e il resto di `/api/*` a `backend`.
 
-La persistenza dati è garantita dal volume MariaDB anche dopo riavvii dei container.
+La persistenza dati è garantita dai volumi MariaDB anche dopo riavvii dei container.
 
 ## Migrazione da SQLite
 
@@ -59,7 +75,43 @@ cd Backend
 npm run db:migrate:sqlite
 ```
 
+Lo script scrive `users`, `sessions` e `refresh_tokens` nel database di Identity (`IDENTITY_DB_*`, default `hackhub_identity`) e le altre tabelle nel database di dominio (`DB_*`).
+
 Opzionale: `SQLITE_SOURCE_PATH=/path/al/file.sqlite`.
+
+## Architettura backend
+
+Il backend è diviso in moduli con confini di dominio. Il servizio **Identity** è stato estratto come servizio separato con database proprio. Gli altri moduli restano nel monolite, che ora accede agli utenti solo tramite le API interne di Identity.
+
+| Modulo | Cartella | Tabelle | Ruolo |
+|---|---|---|---|
+| Identity (servizio separato) | `Backend/src/modules/identity/` | `users`, `sessions`, `refresh_tokens` | Utenti, login, sessioni, token |
+| Team | `Backend/src/modules/team/` | `teams`, `team_members`, `team_invitations` | Team, membri, inviti |
+| Hackathon | `Backend/src/modules/hackathon/` | `hackathons`, `hackathon_staff` | Hackathon, regolamento, date, staff |
+| Competition | `Backend/src/modules/competition/` | `registrations`, `submissions`, `evaluations`, `winners` | Iscrizioni, valutazioni, classifiche, vincitori |
+| Support | `Backend/src/modules/support/` | `support_requests`, `support_calls` | Richieste di supporto e appuntamenti |
+| Notification | `Backend/src/modules/notification/` | `notifications` | Creazione, lettura e conteggio notifiche |
+
+- `Backend/src/identity-app.js` è il composition root di Identity; `Backend/src/identity-server.js` ne è l'entrypoint (porta `PORT`, default 3001).
+- Le route pubbliche di Identity restano sotto `/api/auth/*`. Le route interne sono `/internal/*` e richiedono l'header `x-hackhub-service-token`.
+- Il monolite verifica i JWT in locale con `HACKHUB_JWT_SECRET`, senza chiamare Identity a ogni richiesta.
+- `Backend/src/gateway/hackathon-gateway.js` compone i dati di più moduli (ad esempio `winner_team_id`, stato e flag per utente) per le risposte degli hackathon.
+- `Backend/src/domain/hackathon-status.js` contiene le regole di stato dell'hackathon.
+- `Backend/src/app.js` è il composition root del monolite: crea le repository, il client HTTP verso Identity (`http-identity-directory.js`), i servizi e registra le route dei moduli.
+
+Deviazioni dal piano:
+- il vincitore non è più una colonna `hackathons.winner_team_id`, ma la tabella `winners` di proprietà di Competition. La migrazione di schema la crea e rimuove la colonna in modo automatico;
+- le foreign key verso `users` sono state rimosse dalle tabelle di dominio, perché gli utenti ora vivono in un altro database. Gli ID utente sono validati tramite Identity.
+
+## Comunicazione tra servizi
+
+- **Chiamate sincrone**: il monolite chiama Identity via HTTP interno (`/internal/*`), autenticato con `x-hackhub-service-token` (`HACKHUB_SERVICE_TOKEN`). Il token è condiviso tra i servizi; token per servizio sono previsti in una fase successiva.
+- **Eventi (Outbox → Inbox)**: Identity scrive gli eventi nella tabella `outbox_events` nella stessa transazione della modifica che li produce. Un relay li consegna in ordine a `POST /internal/events` del monolite ogni 2 secondi; in caso di errore riprova al ciclo successivo e non salta eventi.
+- Il monolite registra ogni evento ricevuto in `inbox_events` (chiave `event_id`) nella stessa transazione dei suoi effetti: un duplicato viene ignorato, un handler fallito fa rollback e l'evento viene ritentato.
+- Evento attuale: `user.registered` (emesso da Identity alla registrazione, con `userId`, `name`, `email`). Il monolite lo registra senza effetti visibili.
+- Variabile richiesta da Identity: `BACKEND_SERVICE_URL` (in Compose è `http://backend:3000`).
+
+Limiti noti: la consegna è *at-least-once* (un crash tra consegna e marcatura provoca una nuova consegna, assorbita dall'Inbox); le righe pubblicate in `outbox_events` non vengono ancora eliminate; l'Outbox del monolite non esiste ancora, perché in questa fase non emette eventi.
 
 ## Test
 
@@ -72,12 +124,13 @@ cd ../frontend
 npx ng test --watch=false  # test frontend (Vitest, nessun browser richiesto)
 ```
 
-I test backend usano MariaDB (`DB_*`). Un MariaDB temporaneo per i test in locale:
+I test backend usano MariaDB (`DB_*`) e un secondo database per Identity (`hackhub_identity_test`, che deve esistere con privilegi per `DB_USER`; in CI viene creato dal workflow). Un MariaDB temporaneo per i test in locale:
 
 ```bash
 docker run -d --name hackhub-test-db -p 127.0.0.1:3307:3306 \
   -e MARIADB_DATABASE=hackhub_test -e MARIADB_USER=hackhub \
   -e MARIADB_PASSWORD=hackhub -e MARIADB_ROOT_PASSWORD=root mariadb:11.8
+docker exec hackhub-test-db mariadb -uroot -proot -e "CREATE DATABASE hackhub_identity_test; GRANT ALL PRIVILEGES ON hackhub_identity_test.* TO 'hackhub'@'%';"
 DB_PORT=3307 DB_PASSWORD=hackhub DB_NAME=hackhub_test npm run test:coverage
 docker rm -f hackhub-test-db
 ```
@@ -87,7 +140,7 @@ docker rm -f hackhub-test-db
 Il workflow [.github/workflows/ci.yml](.github/workflows/ci.yml) viene eseguito automaticamente su push e pull request verso `main` (ed è avviabile manualmente con `workflow_dispatch`). È composto da tre job in sequenza:
 
 1. **Build** – installazione delle dipendenze di `Backend` e `frontend` (`npm ci`) e build Angular di produzione; la build è caricata come artifact `frontend-dist`.
-2. **Test** – avvia un MariaDB 11.8 come service container, esegue i test backend con soglia di copertura (`npm run test:coverage`) e i test frontend (`npx ng test --watch=false`). Richiede il successo della fase Build.
+2. **Test** – avvia un MariaDB 11.8 come service container, crea il database `hackhub_identity_test` per Identity, esegue i test backend con soglia di copertura (`npm run test:coverage`) e i test frontend (`npx ng test --watch=false`). Richiede il successo della fase Build.
 3. **Package** – costruisce le immagini Docker di `Backend/Dockerfile` e `frontend/Dockerfile`. Richiede il successo di Build e Test.
    - Su pull request le immagini vengono solo costruite (nessuna pubblicazione).
    - Su push verso `main` le immagini vengono pubblicate su GHCR come `ghcr.io/<owner>/<repo>/hackhub-backend` e `ghcr.io/<owner>/<repo>/hackhub-frontend`, con tag `latest`, nome del branch e SHA del commit. Usa il `GITHUB_TOKEN` (permesso `packages: write`), nessun segreto aggiuntivo.
