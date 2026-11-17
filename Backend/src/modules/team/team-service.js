@@ -111,8 +111,13 @@ class TeamService {
     if (await this.repository.hasPendingInvitation(teamId, invited.id)) throw httpError(HttpStatus.CONFLICT, 'Invito già pendente.');
     const team = await this.repository.findById(teamId);
     const invitation = await this.repository.createInvitation(teamId, invited.id, inviterId);
-    await this.notificationService.create(invited.id, 'INVITATION', 'Nuovo invito al team',
-      `Hai ricevuto un invito a partecipare al team ${team.name}.`, 'TEAM_INVITATION', invitation.id);
+    try {
+      await this.notificationService.create(invited.id, 'INVITATION', 'Nuovo invito al team',
+        `Hai ricevuto un invito a partecipare al team ${team.name}.`, 'TEAM_INVITATION', invitation.id);
+    } catch (error) {
+      await this.repository.deleteInvitation(invitation.id);
+      throw error;
+    }
     return invitation;
   }
 

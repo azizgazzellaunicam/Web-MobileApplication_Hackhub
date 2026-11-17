@@ -36,8 +36,12 @@ async function initializeIdentitySchema(database) {
       published_at DATETIME NULL,
       attempts INT UNSIGNED NOT NULL DEFAULT 0,
       last_error VARCHAR(255) NULL,
+      next_attempt_at DATETIME(3) NULL,
+      dead_lettered_at DATETIME(3) NULL,
       KEY idx_outbox_pending (published_at, seq)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+    'ALTER TABLE outbox_events ADD COLUMN IF NOT EXISTS next_attempt_at DATETIME(3) NULL',
+    'ALTER TABLE outbox_events ADD COLUMN IF NOT EXISTS dead_lettered_at DATETIME(3) NULL',
   ];
 
   for (const statement of statements) {

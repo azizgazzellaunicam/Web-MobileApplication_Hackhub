@@ -5,6 +5,7 @@ const { serviceTokenHeader } = require('../src/security/service-token');
 const { errorHandler } = require('../src/middleware/error-handler');
 const { InboxRepository } = require('../src/modules/events/inbox-repository');
 const { InboxService } = require('../src/modules/events/inbox-service');
+const { OutboxRelay } = require('../src/modules/identity/outbox-relay');
 const { registerEventRoutes } = require('../src/modules/events/inbox-controller');
 const {
   createInitializedDatabase,
@@ -101,6 +102,7 @@ test('an unreachable monolith keeps the event pending and delivers it after reco
   assert.notEqual(pending.last_error, null);
 
   identity.outboxRelay.targetUrl = inbox.url;
+  await identity.database.execute('UPDATE outbox_events SET next_attempt_at = NULL');
   assert.equal(await identity.outboxRelay.publishPending(), 1);
   const [delivered] = await outboxRows(identity);
   assert.notEqual(delivered.published_at, null);
@@ -135,4 +137,96 @@ test('a failed registration leaves no outbox event behind', async (t) => {
 
   const rows = await outboxRows(identity);
   assert.equal(rows.length, 1);
+});
+
+test('concurrent registrations of the same email create one user and one outbox event', async (t) => {
+  const identity = await startFreshIdentity(t, unreachableBackendUrl);
+
+  const responses = await Promise.all(Array.from({ length: 5 }, () => register(identity, 'race@example.com')));
+
+  assert.deepEqual(responses.map((response) => response.status).sort(), [200, 409, 409, 409, 409]);
+  assert.equal((await outboxRows(identity)).length, 1);
+});
+
+test('a failed delivery waits for its retry and keeps later events behind it', async (t) => {
+  const identity = await startFreshIdentity(t, unreachableBackendUrl);
+  await register(identity, 'first-retry@example.com');
+  await register(identity, 'second-retry@example.com');
+  const [eventRows] = await identity.database.execute('SELECT event_id FROM outbox_events ORDER BY seq');
+  const deliveredIds = [];
+  const relay = new OutboxRelay({
+    repository: identity.outboxRelay.repository,
+    targetUrl: 'http://monolith.test',
+    serviceToken: testServiceToken,
+    fetchImpl: async (url, { body }) => {
+      deliveredIds.push(JSON.parse(body).id);
+      return new Response('', { status: 503 });
+    },
+  });
+
+  assert.equal(await relay.publishPending(), 0);
+  assert.equal(await relay.publishPending(), 0);
+  assert.deepEqual(deliveredIds, [eventRows[0].event_id]);
+  const [[retrying]] = await identity.database.execute(
+    'SELECT attempts, next_attempt_at > NOW(3) AS scheduled FROM outbox_events WHERE event_id = ?',
+    [eventRows[0].event_id],
+  );
+  assert.equal(Number(retrying.attempts), 1);
+  assert.equal(Number(retrying.scheduled), 1);
+
+  await identity.database.execute('UPDATE outbox_events SET next_attempt_at = NULL');
+  relay.fetchImpl = async (url, { body }) => {
+    deliveredIds.push(JSON.parse(body).id);
+    return new Response('{"status":"accepted"}', { status: 202 });
+  };
+  assert.equal(await relay.publishPending(), 2);
+  assert.deepEqual(deliveredIds.slice(1), eventRows.map((row) => row.event_id));
+});
+
+test('an event that exhausts its retries is dead-lettered and later events are still delivered', async (t) => {
+  const identity = await startFreshIdentity(t, unreachableBackendUrl);
+  await register(identity, 'poison@example.com');
+  await register(identity, 'healthy@example.com');
+  const [[poison]] = await identity.database.execute('SELECT event_id FROM outbox_events ORDER BY seq LIMIT 1');
+  await identity.database.execute('UPDATE outbox_events SET attempts = 5 WHERE event_id = ?', [poison.event_id]);
+  const relay = new OutboxRelay({
+    repository: identity.outboxRelay.repository,
+    targetUrl: 'http://monolith.test',
+    serviceToken: testServiceToken,
+    fetchImpl: async (url, { body }) => new Response('', { status: JSON.parse(body).id === poison.event_id ? 503 : 202 }),
+  });
+
+  assert.equal(await relay.publishPending(), 1);
+
+  const [[deadLettered]] = await identity.database.execute(
+    'SELECT attempts, dead_lettered_at, published_at FROM outbox_events WHERE event_id = ?',
+    [poison.event_id],
+  );
+  assert.equal(Number(deadLettered.attempts), 6);
+  assert.notEqual(deadLettered.dead_lettered_at, null);
+  assert.equal(deadLettered.published_at, null);
+  assert.equal(await relay.publishPending(), 0);
+});
+
+test('a permanent 4xx rejection is dead-lettered at once while later events are still delivered', async (t) => {
+  const identity = await startFreshIdentity(t, unreachableBackendUrl);
+  await register(identity, 'rejected@example.com');
+  await register(identity, 'accepted@example.com');
+  const [[rejected]] = await identity.database.execute('SELECT event_id FROM outbox_events ORDER BY seq LIMIT 1');
+  const relay = new OutboxRelay({
+    repository: identity.outboxRelay.repository,
+    targetUrl: 'http://monolith.test',
+    serviceToken: testServiceToken,
+    fetchImpl: async (url, { body }) => new Response('', { status: JSON.parse(body).id === rejected.event_id ? 400 : 202 }),
+  });
+
+  assert.equal(await relay.publishPending(), 1);
+
+  const [[deadLettered]] = await identity.database.execute(
+    'SELECT attempts, dead_lettered_at, next_attempt_at FROM outbox_events WHERE event_id = ?',
+    [rejected.event_id],
+  );
+  assert.equal(Number(deadLettered.attempts), 1);
+  assert.notEqual(deadLettered.dead_lettered_at, null);
+  assert.equal(deadLettered.next_attempt_at, null);
 });

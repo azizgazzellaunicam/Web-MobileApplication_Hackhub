@@ -73,6 +73,10 @@ class TeamRepository extends BaseRepository {
     return this.one('SELECT * FROM team_invitations WHERE id=?', [result.lastInsertRowid]);
   }
 
+  async deleteInvitation(invitationId) {
+    return this.run('DELETE FROM team_invitations WHERE id=?', [invitationId]);
+  }
+
   async hasPendingInvitation(teamId, invitedUserId) {
     return this.one(`
       SELECT 1 FROM team_invitations

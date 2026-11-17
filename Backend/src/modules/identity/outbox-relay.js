@@ -1,6 +1,8 @@
 const { serviceTokenHeader } = require('../../security/service-token');
 
 const deliveryTimeoutMs = 5000;
+// Waits before retrying after the 1st, 2nd, ... failed delivery. One more failure after the last wait dead-letters the event.
+const retryDelaysMs = [1000, 2000, 4000, 8000, 16000];
 
 class OutboxRelay {
   constructor({ repository, targetUrl, serviceToken, fetchImpl = fetch, batchSize = 50 }) {
@@ -13,7 +15,8 @@ class OutboxRelay {
     this.timer = null;
   }
 
-  // Events are delivered in order; the first failure stops the batch so later events are not sent ahead of it.
+  // Events are delivered in order. An event waiting for its retry blocks the events behind it;
+  // an event that exhausts its retries is dead-lettered so the rest of the outbox keeps moving.
   async publishPending() {
     if (this.running) return 0;
     this.running = true;
@@ -21,10 +24,16 @@ class OutboxRelay {
       const events = await this.repository.findPending(this.batchSize);
       let published = 0;
       for (const event of events) {
+        if (Number(event.waiting)) break;
         try {
           await this.deliver(event);
         } catch (error) {
-          await this.repository.recordFailure(event.event_id, error.message);
+          const failures = event.attempts + 1;
+          if (error.permanent || failures > retryDelaysMs.length) {
+            await this.repository.markDeadLettered(event.event_id, error.message);
+            continue;
+          }
+          await this.repository.recordFailure(event.event_id, error.message, retryDelaysMs[failures - 1]);
           break;
         }
         await this.repository.markPublished(event.event_id);
@@ -51,7 +60,11 @@ class OutboxRelay {
       }),
       signal: AbortSignal.timeout(deliveryTimeoutMs),
     });
-    if (!response.ok) throw new Error(`Consegna rifiutata con stato ${response.status}.`);
+    if (response.ok) return;
+    const error = new Error(`Consegna rifiutata con stato ${response.status}.`);
+    // A 4xx is a permanent rejection (408 and 429 are transient and keep being retried).
+    error.permanent = response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429;
+    throw error;
   }
 
   start(intervalMs = 2000) {
