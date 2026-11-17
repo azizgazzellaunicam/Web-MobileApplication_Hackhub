@@ -56,9 +56,9 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 
-  # 2. TEST: test backend su MariaDB temporaneo e test frontend
-  test:
-    name: Test
+  # 2. TEST: test per servizio su MariaDB temporaneo e test frontend
+  test-backend:
+    name: Test backend (monolith and integration)
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -111,6 +111,74 @@ jobs:
         working-directory: Backend
         run: npm run test:coverage
 
+  test-identity:
+    name: Test identity service
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      mariadb:
+        image: mariadb:11.8
+        env:
+          MARIADB_ROOT_PASSWORD: ci-root-password
+          MARIADB_DATABASE: hackhub_test
+          MARIADB_USER: hackhub
+          MARIADB_PASSWORD: ci-hackhub-password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: '3306'
+      DB_USER: hackhub
+      DB_PASSWORD: ci-hackhub-password
+      DB_NAME: hackhub_test
+      DB_POOL_SIZE: '10'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: Backend/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: Backend
+        run: npm ci
+
+      - name: Prepare identity test database
+        env:
+          MYSQL_PWD: ci-root-password
+        run: |
+          mysql -h 127.0.0.1 -P 3306 -u root -e "CREATE DATABASE IF NOT EXISTS hackhub_identity_test; GRANT ALL PRIVILEGES ON hackhub_identity_test.* TO 'hackhub'@'%'; FLUSH PRIVILEGES;"
+
+      - name: Run identity service tests
+        working-directory: Backend
+        run: npm run test:identity
+
+  test-frontend:
+    name: Test frontend
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
       - name: Install frontend dependencies
         working-directory: frontend
         run: npm ci
@@ -121,10 +189,10 @@ jobs:
           CI: 'true'
         run: npx ng test --watch=false
 
-  # 3. PACKAGE: costruzione immagini Docker e pubblicazione su GHCR
+  # 3. PACKAGE: costruzione immagini Docker (backend, identity, frontend) e pubblicazione su GHCR
   package:
     name: Package
-    needs: [build, test]
+    needs: [build, test-backend, test-identity, test-frontend]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -161,6 +229,17 @@ jobs:
             type=sha
             type=raw,value=latest,enable={{is_default_branch}}
 
+      - name: Identity image metadata
+        id: meta-identity
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_PREFIX }}/hackhub-identity
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha
+            type=raw,value=latest,enable={{is_default_branch}}
+
       - name: Frontend image metadata
         id: meta-frontend
         uses: docker/metadata-action@v5
@@ -182,6 +261,17 @@ jobs:
           labels: ${{ steps.meta-backend.outputs.labels }}
           cache-from: type=gha,scope=backend
           cache-to: type=gha,mode=max,scope=backend
+
+      - name: Build and push identity image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./Backend
+          file: ./Backend/Dockerfile.identity
+          push: ${{ env.PUBLISH == 'true' }}
+          tags: ${{ steps.meta-identity.outputs.tags }}
+          labels: ${{ steps.meta-identity.outputs.labels }}
+          cache-from: type=gha,scope=identity
+          cache-to: type=gha,mode=max,scope=identity
 
       - name: Build and push frontend image
         uses: docker/build-push-action@v6

@@ -60,7 +60,7 @@ Lo stack avvia:
 
 - `mariadb` con volume persistente `mariadb_data`, per il dominio (team, hackathon, competizione, supporto, notifiche);
 - `identity-mariadb` con volume `identity_mariadb_data`, dedicato al solo servizio Identity (`hackhub_identity`);
-- `identity` (`src/identity-server.js`), che gestisce utenti, sessioni e token. È raggiungibile solo sulla rete Docker;
+- `identity` (immagine da `Backend/Dockerfile.identity`, `src/identity-server.js`), che gestisce utenti, sessioni e token. È raggiungibile solo sulla rete Docker;
 - `backend` (monolite di dominio) collegato a `mariadb` e a `identity` tramite `IDENTITY_SERVICE_URL`;
 - `frontend` (Nginx) che espone l’app Angular. Nginx instrada `/api/auth/*` a `identity` e il resto di `/api/*` a `backend`.
 
@@ -106,12 +106,15 @@ Deviazioni dal piano:
 ## Comunicazione tra servizi
 
 - **Chiamate sincrone**: il monolite chiama Identity via HTTP interno (`/internal/*`), autenticato con `x-hackhub-service-token` (`HACKHUB_SERVICE_TOKEN`). Il token è condiviso tra i servizi; token per servizio sono previsti in una fase successiva.
-- **Eventi (Outbox → Inbox)**: Identity scrive gli eventi nella tabella `outbox_events` nella stessa transazione della modifica che li produce. Un relay li consegna in ordine a `POST /internal/events` del monolite ogni 2 secondi; in caso di errore riprova al ciclo successivo e non salta eventi.
+- **Eventi (Outbox → Inbox)**: Identity scrive gli eventi nella tabella `outbox_events` nella stessa transazione della modifica che li produce. Un relay li consegna in ordine a `POST /internal/events` del monolite ogni 2 secondi.
+- **Retry e dead-letter**: un errore di consegna mette l'evento in attesa con backoff esponenziale (1s, 2s, 4s, 8s, 16s): in totale 6 consegne, una iniziale e cinque retry. Una risposta 4xx del monolite è un rifiuto permanente e mette subito l'evento in dead-letter (eccetto 408 e 429, che sono transitori e vengono ritentati). Finché l'evento è in attesa, gli eventi successivi non vengono inviati, per mantenere l'ordine. L'evento in dead-letter viene marcato `dead_lettered_at` con `last_error` e il relay prosegue con gli altri.
 - Il monolite registra ogni evento ricevuto in `inbox_events` (chiave `event_id`) nella stessa transazione dei suoi effetti: un duplicato viene ignorato, un handler fallito fa rollback e l'evento viene ritentato.
 - Evento attuale: `user.registered` (emesso da Identity alla registrazione, con `userId`, `name`, `email`). Il monolite lo registra senza effetti visibili.
 - Variabile richiesta da Identity: `BACKEND_SERVICE_URL` (in Compose è `http://backend:3000`).
+- **Compensazione nel monolite**: l'invito a un team crea l'invito e poi la notifica, che usano connessioni diverse. Se la notifica fallisce, l'invito appena creato viene cancellato e la richiesta fallisce.
+- **Identity non disponibile**: le chiamate sincrone del monolite a Identity rispondono `502` senza scrivere nulla in locale.
 
-Limiti noti: la consegna è *at-least-once* (un crash tra consegna e marcatura provoca una nuova consegna, assorbita dall'Inbox); le righe pubblicate in `outbox_events` non vengono ancora eliminate; l'Outbox del monolite non esiste ancora, perché in questa fase non emette eventi.
+Limiti noti: la consegna è *at-least-once* (un crash tra consegna e marcatura provoca una nuova consegna, assorbita dall'Inbox); le righe pubblicate o in dead-letter in `outbox_events` non vengono ancora eliminate né riesaminate automaticamente; l'Outbox del monolite non esiste ancora, perché in questa fase non emette eventi.
 
 ## Test
 
@@ -119,6 +122,7 @@ Limiti noti: la consegna è *at-least-once* (un crash tra consegna e marcatura p
 cd Backend
 npm test                 # test backend (richiede MariaDB, vedi DB_*)
 npm run test:coverage    # test backend + soglia di copertura righe ≥ 90%
+npm run test:identity    # test del solo servizio Identity (sottoinsieme della suite)
 
 cd ../frontend
 npx ng test --watch=false  # test frontend (Vitest, nessun browser richiesto)
@@ -137,21 +141,25 @@ docker rm -f hackhub-test-db
 
 ## CI/CD (GitHub Actions)
 
-Il workflow [.github/workflows/ci.yml](.github/workflows/ci.yml) viene eseguito automaticamente su push e pull request verso `main` (ed è avviabile manualmente con `workflow_dispatch`). È composto da tre job in sequenza:
+Il workflow [.github/workflows/ci.yml](.github/workflows/ci.yml) viene eseguito automaticamente su push e pull request verso `main` (ed è avviabile manualmente con `workflow_dispatch`). Ogni servizio ha job di test e un'immagine Docker indipendenti:
 
 1. **Build** – installazione delle dipendenze di `Backend` e `frontend` (`npm ci`) e build Angular di produzione; la build è caricata come artifact `frontend-dist`.
-2. **Test** – avvia un MariaDB 11.8 come service container, crea il database `hackhub_identity_test` per Identity, esegue i test backend con soglia di copertura (`npm run test:coverage`) e i test frontend (`npx ng test --watch=false`). Richiede il successo della fase Build.
-3. **Package** – costruisce le immagini Docker di `Backend/Dockerfile` e `frontend/Dockerfile`. Richiede il successo di Build e Test.
+2. **Test** – tre job in parallelo, dopo Build:
+   - `test-backend`: MariaDB 11.8 come service container, suite completa del monolite con soglia di copertura (`npm run test:coverage`);
+   - `test-identity`: MariaDB 11.8 dedicato, `npm run test:identity`;
+   - `test-frontend`: test Angular (`npx ng test --watch=false`).
+3. **Package** – costruisce le immagini Docker di `Backend/Dockerfile` (monolite), `Backend/Dockerfile.identity` (Identity) e `frontend/Dockerfile`. Richiede il successo di Build e di tutti i job di test.
    - Su pull request le immagini vengono solo costruite (nessuna pubblicazione).
-   - Su push verso `main` le immagini vengono pubblicate su GHCR come `ghcr.io/<owner>/<repo>/hackhub-backend` e `ghcr.io/<owner>/<repo>/hackhub-frontend`, con tag `latest`, nome del branch e SHA del commit. Usa il `GITHUB_TOKEN` (permesso `packages: write`), nessun segreto aggiuntivo.
+   - Su push verso `main` le immagini vengono pubblicate su GHCR come `ghcr.io/<owner>/<repo>/hackhub-backend`, `ghcr.io/<owner>/<repo>/hackhub-identity` e `ghcr.io/<owner>/<repo>/hackhub-frontend`, con tag `latest`, nome del branch e SHA del commit. Usa il `GITHUB_TOKEN` (permesso `packages: write`), nessun segreto aggiuntivo.
 
 Il deploy non è ancora automatizzato: l'applicazione continua a essere avviata in locale con Docker Compose.
 
 Per riprodurre i controlli della pipeline in locale:
 
 ```bash
-cd Backend && npm ci && npm run test:coverage
+cd Backend && npm ci && npm run test:coverage && npm run test:identity
 cd ../frontend && npm ci && npm run build -- --configuration production && npx ng test --watch=false
 docker build -t hackhub-backend ./Backend
+docker build -f ./Backend/Dockerfile.identity -t hackhub-identity ./Backend
 docker build -t hackhub-frontend ./frontend
 ```

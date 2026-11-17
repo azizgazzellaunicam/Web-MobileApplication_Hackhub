@@ -52,8 +52,7 @@ services:
   identity:
     build:
       context: ./Backend
-      dockerfile: Dockerfile
-    command: ["node", "src/identity-server.js"]
+      dockerfile: Dockerfile.identity
     depends_on:
       identity-mariadb:
         condition: service_healthy
