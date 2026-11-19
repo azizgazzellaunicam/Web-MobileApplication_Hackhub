@@ -33,20 +33,6 @@ All’avvio:
 3. esegue i controlli di sicurezza startup;
 4. popola eventuali dati demo in sviluppo/test.
 
-## Migrazione dati SQLite → MariaDB
-
-È disponibile lo script:
-
-```bash
-npm run db:migrate:sqlite
-```
-
-Variabile opzionale:
-
-- `SQLITE_SOURCE_PATH` (default `Backend/hackhub.sqlite`)
-
-Lo script preserva ID e relazioni, usa insert idempotenti e riallinea gli `AUTO_INCREMENT`.
-
 ## Avvio
 
 Per avviare l'intero progetto in locale, inclusi i due database, RabbitMQ e

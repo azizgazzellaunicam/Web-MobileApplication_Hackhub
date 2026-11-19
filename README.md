@@ -151,19 +151,6 @@ Lo stack avvia:
 
 La persistenza dati è garantita dai volumi MariaDB anche dopo riavvii dei container.
 
-## Migrazione da SQLite
-
-Se hai un vecchio file SQLite (`Backend/hackhub.sqlite`), puoi trasferire i dati:
-
-```bash
-cd Backend
-npm run db:migrate:sqlite
-```
-
-Lo script scrive `users`, `sessions` e `refresh_tokens` nel database di Identity (`IDENTITY_DB_*`, default `hackhub_identity`) e le altre tabelle nel database di dominio (`DB_*`).
-
-Opzionale: `SQLITE_SOURCE_PATH=/path/al/file.sqlite`.
-
 ## Architettura backend
 
 Il backend è diviso in moduli con confini di dominio. Il servizio **Identity** dispone di un database proprio; gli altri moduli sono nel monolite e accedono agli utenti tramite le API interne di Identity.
