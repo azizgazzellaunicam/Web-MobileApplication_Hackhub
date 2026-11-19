@@ -49,10 +49,11 @@ Lo script preserva ID e relazioni, usa insert idempotenti e riallinea gli `AUTO_
 
 ## Avvio
 
-```bash
-npm install
-npm start
-```
+Per avviare l'intero progetto in locale, inclusi i due database, RabbitMQ e
+Identity, seguire il [README principale](../README.md#avvio-locale-con-docker-compose).
+La sezione [sviluppo con servizi Node locali](../README.md#sviluppo-con-servizi-node-locali)
+descrive le variabili distinte per Identity e backend e l'ordine di avvio.
+I processi Node non caricano automaticamente `.env`.
 
 `GET /health` verifica sia il processo HTTP sia la raggiungibilità MariaDB (`SELECT 1`).
 
@@ -68,8 +69,13 @@ Il consumer della coda `hackhub.backend.events` viene avviato da `Backend/src/se
 
 ## Test
 
+Eseguire i test usando database e broker RabbitMQ dedicati: la suite modifica
+i dati e le code. La procedura completa per creare servizi di test isolati e
+configurare le variabili è nel [README principale](../README.md#test).
+
 ```bash
 npm test
 ```
 
-I test usano MariaDB e richiedono le variabili `DB_*` configurate. I test di integrazione tra Identity e backend (`event-relay.test.js`) richiedono anche RabbitMQ, con `RABBITMQ_URL` (default `amqp://hackhub:hackhub@127.0.0.1:5672`).
+I test richiedono due database MariaDB configurati tramite le variabili `DB_*`
+e un broker RabbitMQ indicato da `RABBITMQ_URL`.

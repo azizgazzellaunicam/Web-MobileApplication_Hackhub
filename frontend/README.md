@@ -41,15 +41,9 @@ configurato come `/api`, così il frontend utilizza sempre percorsi relativi.
 
 ## Avvio in sviluppo
 
-Avviare prima il backend:
-
-```bash
-cd ..\Backend
-npm install
-npm start
-```
-
-In un secondo terminale, dalla cartella `frontend`:
+Avviare prima i due database, RabbitMQ, Identity e il backend seguendo la
+procedura [sviluppo con servizi Node locali](../README.md#sviluppo-con-servizi-node-locali).
+Poi, in un terminale dalla cartella `frontend`:
 
 ```bash
 npm install
@@ -61,8 +55,9 @@ L'applicazione sarà disponibile su `http://localhost:4200`.
 ## Comunicazione con il backend
 
 Il frontend invia le richieste agli endpoint `/api/...`. Durante lo sviluppo,
-il proxy Angular definito in `proxy.config.json` inoltra le richieste a
-`http://localhost:3000`.
+il proxy Angular definito in `proxy.config.json` inoltra `/api/auth/**` a
+Identity su `http://localhost:3001` e le altre richieste `/api/**` al backend
+su `http://localhost:3000`.
 
 Il browser comunica quindi con il frontend sulla stessa origine e il backend
 non viene contattato direttamente dall'interfaccia.
@@ -89,21 +84,22 @@ multi-stage build in `frontend/Dockerfile` esegue `npm ci` e
 `npm run build -- --configuration production` con Node `22.22.3`, poi copia
 solo `dist/Hackhub/browser` in un'immagine Nginx Alpine. La configurazione
 `frontend/nginx.conf` serve Angular, applica il fallback SPA su `index.html` e
-inoltra `/api/` e `/health` al servizio Compose `backend:3000`. Il browser usa
-solo l'origine Nginx; il backend non è pubblicato sull'host e non serve CORS.
+inoltra `/api/auth/` a `identity:3001` e `/api/` e `/health` a
+`backend:3000`. Il browser usa solo l'origine Nginx; backend e Identity non
+sono pubblicati sull'host e non serve CORS.
 
-Dalla root del repository, crea `.env` da `.env.example` e valorizza
-`HACKHUB_JWT_SECRET` prima di avviare Compose:
+Dalla root del repository, crea `.env` da `.env.example` senza sovrascrivere
+un file esistente:
 
 ```powershell
-Copy-Item .env.example .env
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 ```
 
-Poi dalla root esegui `docker compose up --build -d` e apri
-`http://localhost`. Compose pubblica solo la porta HTTP del frontend
-(configurabile tramite `FRONTEND_PORT`) e attende l'health check del backend.
-I comandi Compose completi e i dettagli sulla persistenza SQLite sono nel
-[README principale](../README.md#avvio-locale-con-docker-compose).
+Compila tutte le password richieste, `HACKHUB_JWT_SECRET` e
+`HACKHUB_SERVICE_TOKEN` come indicato nel [README principale](../README.md#avvio-locale-con-docker-compose).
+Poi esegui `docker compose up --build -d` e apri `http://localhost` oppure la
+porta configurata da `FRONTEND_PORT`. Compose espone il frontend, i database
+MariaDB e RabbitMQ solo su localhost e conserva i loro dati in volumi Docker.
 
 ## PWA
 
@@ -121,12 +117,16 @@ HackHub usa il supporto ufficiale Angular PWA tramite
   viene registrato quando l'applicazione è stabile.
 
 In sviluppo `npm start` continua a usare il dev server senza service worker.
-Per verificare la PWA:
+Per verificare gli asset e il service worker della PWA con un server statico:
 
 ```bash
 npm run build
 npx http-server dist/Hackhub/browser
 ```
+
+Il server statico serve solo il frontend e non inoltra le richieste API; per
+provare autenticazione e funzionalità complete usare l'avvio con Docker Compose
+descritto nel [README principale](../README.md#avvio-locale-con-docker-compose).
 
 Aprire l'app su `localhost` o HTTPS e controllare in DevTools > Application:
 manifest, icone, service worker e voce di installazione. Gli aggiornamenti

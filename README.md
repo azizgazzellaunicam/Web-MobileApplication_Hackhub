@@ -2,33 +2,125 @@
 
 HackHub è una piattaforma per la gestione di hackathon, realizzata con Angular 22, Node.js, Express e MariaDB.
 
-## Avvio locale (senza Docker)
+## Architettura
 
-Il servizio Identity (`Backend/src/identity-server.js`) va avviato prima del backend: il backend lo interroga per gli utenti (`IDENTITY_SERVICE_URL`). Richiede un MariaDB dedicato (`hackhub_identity`), `HACKHUB_SERVICE_TOKEN` e `RABBITMQ_URL` (broker su cui Identity pubblica gli eventi e il backend li consuma). In locale RabbitMQ si avvia con Docker (vedi [Test](#test)).
-
-Identity:
-
-```bash
-cd Backend
-npm install
-npm run start:identity
+```mermaid
+flowchart LR
+  Browser[Browser] --> Frontend[Frontend Angular / PWA]
+  Frontend -->|/api/auth| Identity[Identity Service]
+  Frontend -->|/api| Backend[Backend Express]
+  Backend -->|HTTP interno con service token| Identity
+  Identity --> IdentityDB[(MariaDB Identity)]
+  Backend --> DomainDB[(MariaDB dominio)]
+  Identity -->|Outbox / relay| RabbitMQ[RabbitMQ]
+  RabbitMQ -->|Consumer / Inbox| Backend
 ```
 
-Backend:
+Il backend contiene i moduli Team, Hackathon, Competition, Support e Notification. Identity gestisce utenti, sessioni e token nel proprio database. Il [diagramma architetturale](docs/diagramma-architetturale.md) e i dettagli su [messaggistica, retry e dead-letter](docs/messaggistica.md) sono disponibili nella documentazione.
 
-```bash
-cd Backend
-npm install
-npm start
+## Deployment locale
+
+Il deployment seguente usa Docker Compose su una sola macchina. Le porte pubblicate sono vincolate a `127.0.0.1`, quindi accessibili solo dalla macchina locale.
+
+```mermaid
+flowchart TB
+  Browser[Browser sulla macchina locale] -->|127.0.0.1:80| Frontend
+  subgraph Host[Macchina locale: Docker Compose]
+    subgraph Network[Rete Docker hackhub]
+      Frontend[Frontend: Nginx + Angular]
+      Identity[Identity: porta 3001]
+      Backend[Backend: porta 3000]
+      IdentityDB[(MariaDB Identity)]
+      DomainDB[(MariaDB dominio)]
+      RabbitMQ[RabbitMQ]
+      Frontend -->|/api/auth| Identity
+      Frontend -->|/api| Backend
+      Backend -->|HTTP interno| Identity
+      Identity --> IdentityDB
+      Backend --> DomainDB
+      Identity --> RabbitMQ
+      RabbitMQ --> Backend
+    end
+    IdentityDB --- IdentityVolume[(Volume identity_mariadb_data)]
+    DomainDB --- DomainVolume[(Volume mariadb_data)]
+    RabbitMQ --- RabbitVolume[(Volume rabbitmq_data)]
+  end
 ```
 
-Frontend:
+MariaDB è raggiungibile dall'host solo su `127.0.0.1:3306` e `127.0.0.1:3307`; RabbitMQ solo su `127.0.0.1:5672` e la console su `127.0.0.1:15672`. Le porte host sono configurabili in `.env`; backend e Identity sono raggiungibili solo sulla rete Docker. La porta frontend predefinita è `80`, modificabile con `FRONTEND_PORT`. Il [diagramma di deployment](docs/diagramma-deployment.md) descrive i container, la rete e i volumi.
+
+## Avvio locale con Docker Compose
+
+Prerequisiti: Docker Engine o Docker Desktop avviato e plugin Docker Compose. Il build scarica le immagini necessarie. Eseguire i comandi dalla root del repository; su Windows usare PowerShell:
+
+```powershell
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
+```
+
+Su Linux/macOS, creare il file solo se non esiste: `test -e .env || cp .env.example .env`. Aprire `.env` e valorizzare tutti i seguenti campi vuoti:
+
+- `DB_PASSWORD`, `DB_ROOT_PASSWORD`, `IDENTITY_DB_PASSWORD`, `IDENTITY_DB_ROOT_PASSWORD` e `RABBITMQ_PASSWORD`.
+- `HACKHUB_JWT_SECRET` e `HACKHUB_SERVICE_TOKEN`, ciascuno di almeno 32 caratteri. Usare valori casuali e distinti, senza pubblicarli.
+
+Per `RABBITMQ_PASSWORD` usare caratteri alfanumerici o esadecimali: è inserita in un URL AMQP e caratteri speciali come `@`, `:`, `/`, `%` e `#` non sono supportati. `.env` è ignorato da Git. Le credenziali MariaDB e RabbitMQ inizializzano i volumi al primo avvio: cambiare `.env` successivamente non aggiorna automaticamente gli utenti già presenti.
 
 ```bash
+docker compose config --quiet
+docker compose up --build -d
+docker compose ps
+docker compose logs -f
+```
+
+Aprire `http://localhost` o `http://localhost:<FRONTEND_PORT>` se si è cambiata la porta. L'endpoint `/health` sulla stessa origine verifica backend e database di dominio. Compose usa `NODE_ENV=production` e disabilita i dati demo: registrare un utente dall'interfaccia. Le registrazioni creano utenti con ruolo `USER`. Per fermare lo stack usare `docker compose down`; i volumi restano. **Non usare `docker compose down -v` se si vogliono conservare i dati**.
+
+## Sviluppo con servizi Node locali
+
+Questa modalità usa Docker solo per i due MariaDB e RabbitMQ; i processi Identity, backend e frontend sono avviati separatamente. Richiede Node.js `^22.22.3`, `^24.15.0` oppure `>=26.0.0`, npm, Docker e il file `.env` compilato come sopra. I comandi sotto sono per PowerShell; avviare i servizi in terminali distinti.
+
+1. Dalla root, avviare solo l'infrastruttura e installare le dipendenze:
+
+```powershell
+docker compose up -d mariadb identity-mariadb rabbitmq
+cd Backend
+npm ci
+cd ../frontend
+npm ci
+```
+
+2. Nel terminale Identity, dalla root, sostituire i segnaposto con i corrispondenti valori di `.env`:
+
+```powershell
+cd Backend
+$env:DB_HOST = '127.0.0.1'
+$env:DB_PORT = '3307'
+$env:DB_NAME = '<IDENTITY_DB_NAME>'
+$env:DB_USER = '<IDENTITY_DB_USER>'
+$env:DB_PASSWORD = '<IDENTITY_DB_PASSWORD>'
+$env:RABBITMQ_URL = 'amqp://<RABBITMQ_USER>:<RABBITMQ_PASSWORD>@127.0.0.1:5672'
+$env:HACKHUB_SEED_DEMO = 'false'
+node --env-file=../.env src/identity-server.js
+```
+
+3. In un **nuovo terminale** backend, dalla root, sostituire il segnaposto AMQP con gli stessi valori:
+
+```powershell
+cd Backend
+$env:DB_HOST = '127.0.0.1'
+$env:DB_PORT = '3306'
+$env:IDENTITY_SERVICE_URL = 'http://127.0.0.1:3001'
+$env:RABBITMQ_URL = 'amqp://<RABBITMQ_USER>:<RABBITMQ_PASSWORD>@127.0.0.1:5672'
+$env:HACKHUB_SEED_DEMO = 'false'
+node --env-file=../.env src/server.js
+```
+
+4. In un terzo terminale, dalla root, avviare Angular e aprire `http://localhost:4200`:
+
+```powershell
 cd frontend
-npm install
 npm start
 ```
+
+`node --env-file=../.env` carica JWT, service token e credenziali del database di dominio dal file; le variabili già impostate nel terminale hanno precedenza. Se sono state cambiate le porte host DB o RabbitMQ in `.env`, adattare i comandi. Il proxy Angular inoltra `/api/auth/**` a Identity sulla porta 3001 e `/api/**` al backend sulla porta 3000. I processi Node diretti non caricano `.env` automaticamente. In questa procedura il seed demo è disabilitato; i dati demo mostrati dall'interfaccia di sviluppo non corrispondono necessariamente a utenti presenti nel database.
 
 ## Variabili d’ambiente principali
 
@@ -47,15 +139,6 @@ Nel file `.env` (partendo da `.env.example`):
 - `HACKHUB_JWT_ISSUER`
 - `HACKHUB_JWT_AUDIENCE`
 - `FRONTEND_PORT`
-
-## Docker Compose
-
-```bash
-docker compose up --build -d
-docker compose ps
-docker compose logs -f
-docker compose down
-```
 
 Lo stack avvia:
 
@@ -83,7 +166,7 @@ Opzionale: `SQLITE_SOURCE_PATH=/path/al/file.sqlite`.
 
 ## Architettura backend
 
-Il backend è diviso in moduli con confini di dominio. Il servizio **Identity** è stato estratto come servizio separato con database proprio. Gli altri moduli restano nel monolite, che ora accede agli utenti solo tramite le API interne di Identity.
+Il backend è diviso in moduli con confini di dominio. Il servizio **Identity** dispone di un database proprio; gli altri moduli sono nel monolite e accedono agli utenti tramite le API interne di Identity.
 
 | Modulo | Cartella | Tabelle | Ruolo |
 |---|---|---|---|
@@ -101,47 +184,47 @@ Il backend è diviso in moduli con confini di dominio. Il servizio **Identity** 
 - `Backend/src/domain/hackathon-status.js` contiene le regole di stato dell'hackathon.
 - `Backend/src/app.js` è il composition root del monolite: crea le repository, il client HTTP verso Identity (`http-identity-directory.js`), i servizi e registra le route dei moduli.
 
-Deviazioni dal piano:
-- il vincitore non è più una colonna `hackathons.winner_team_id`, ma la tabella `winners` di proprietà di Competition. La migrazione di schema la crea e rimuove la colonna in modo automatico;
-- le foreign key verso `users` sono state rimosse dalle tabelle di dominio, perché gli utenti ora vivono in un altro database. Gli ID utente sono validati tramite Identity.
-
 ## Comunicazione tra servizi
 
-- **Chiamate sincrone**: il monolite chiama Identity via HTTP interno (`/internal/*`), autenticato con `x-hackhub-service-token` (`HACKHUB_SERVICE_TOKEN`). Il token è condiviso tra i servizi; token per servizio sono previsti in una fase successiva.
+- **Chiamate sincrone**: il monolite chiama Identity via HTTP interno (`/internal/*`), autenticato con `x-hackhub-service-token` (`HACKHUB_SERVICE_TOKEN`), condiviso tra i servizi.
 - **Eventi (Outbox → RabbitMQ → Inbox)**: Identity scrive gli eventi nella tabella `outbox_events` nella stessa transazione della modifica che li produce. Un relay li pubblica su RabbitMQ (exchange `hackhub.events`, con conferma del publisher) ogni 2 secondi, in ordine. Il backend consuma la coda `hackhub.backend.events` e registra ogni evento in `inbox_events` (chiave `event_id`) nella stessa transazione dei suoi effetti. Il flusso dettagliato, con retry, dead-letter queue e diagrammi, è in [docs/messaggistica.md](docs/messaggistica.md).
 - **Retry e dead-letter**: il consumer ritenta un evento il cui handler fallisce con attese di 1s, 2s, 4s, 8s e 16s (ogni attesa è una coda con TTL, senza bloccare gli altri eventi). Dopo cinque retry l'evento va nella coda `hackhub.backend.events.dead`, con `x-attempts` e `x-last-error`. Un messaggio malformato va subito in dead-letter. Il relay dell'Outbox ritenta la pubblicazione con le stesse attese e marca `dead_lettered_at` dopo cinque retry.
 - Garanzie: consegna *at-least-once* con inbox idempotente, non *exactly-once*. Un duplicato viene ignorato dall'Inbox. I retry possono far arrivare un evento dopo quelli successivi: il backend non deve dipendere dall'ordine tra eventi diversi.
-- Evento attuale: `user.registered` (emesso da Identity alla registrazione, con `userId`, `name`, `email`). Il monolite lo registra senza effetti visibili.
+- **Evento `user.registered`**: Identity lo emette alla registrazione con `userId`, `name` ed `email`; il monolite lo registra nell'Inbox.
 - Variabile richiesta da Identity e dal backend: `RABBITMQ_URL`.
 - **Compensazione nel monolite**: l'invito a un team crea l'invito e poi la notifica, che usano connessioni diverse. Se la notifica fallisce, l'invito appena creato viene cancellato e la richiesta fallisce.
 - **Identity non disponibile**: le chiamate sincrone del monolite a Identity rispondono `502` senza scrivere nulla in locale.
 
-Limiti noti: la consegna è *at-least-once* (un crash tra consegna e marcatura provoca una nuova consegna, assorbita dall'Inbox); i retry possono far arrivare un evento dopo uno successivo; le righe pubblicate o in dead-letter in `outbox_events` non vengono ancora eliminate né riesaminate automaticamente; la coda di dead-letter non viene ancora riesaminata né svuotata automaticamente; l'Outbox del monolite non esiste ancora, perché in questa fase non emette eventi; la `RABBITMQ_PASSWORD` è inserita nell'URL, quindi non deve contenere caratteri speciali URL (`@`, `:`, `/`, `%`, `#`).
-
 ## Test
 
-```bash
-cd Backend
-npm test                 # test backend (richiede MariaDB, vedi DB_*)
-npm run test:coverage    # test backend + soglia di copertura righe ≥ 90%
-npm run test:identity    # test del solo servizio Identity (sottoinsieme della suite)
+I test backend cancellano e ricreano dati di test e modificano le code RabbitMQ: **non puntarli ai database o al broker dell'applicazione**. I comandi seguenti, per PowerShell dalla root del repository, creano servizi temporanei separati sulle porte locali `13306` e `15673`; verificare che porte e nomi dei container non siano già in uso. Le password mostrate sono soltanto per questi container di test locali.
 
-cd ../frontend
-npx ng test --watch=false  # test frontend (Vitest, nessun browser richiesto)
+```powershell
+docker run -d --name hackhub-test-db -p 127.0.0.1:13306:3306 -e MARIADB_DATABASE=hackhub_test -e MARIADB_USER=hackhub -e MARIADB_PASSWORD=hackhub -e MARIADB_ROOT_PASSWORD=root mariadb:11.8
+docker run -d --name hackhub-test-rabbitmq -p 127.0.0.1:15673:5672 -e RABBITMQ_DEFAULT_USER=hackhub -e RABBITMQ_DEFAULT_PASS=hackhub rabbitmq:4-management
 ```
 
-I test usano MariaDB (`DB_*`), un secondo database per Identity (`hackhub_identity_test`, che deve esistere con privilegi per `DB_USER`; in CI viene creato dal workflow) e RabbitMQ (`RABBITMQ_URL`, default `amqp://hackhub:hackhub@127.0.0.1:5672`). I test di integrazione tra Identity e backend usano il broker reale. Per avviare MariaDB e RabbitMQ temporanei in locale:
+Attendere che i servizi siano pronti, verificando `docker logs hackhub-test-db` e `docker logs hackhub-test-rabbitmq`, quindi creare il secondo database e avviare i test:
 
-```bash
-docker run -d --name hackhub-test-db -p 127.0.0.1:3307:3306 \
-  -e MARIADB_DATABASE=hackhub_test -e MARIADB_USER=hackhub \
-  -e MARIADB_PASSWORD=hackhub -e MARIADB_ROOT_PASSWORD=root mariadb:11.8
+```powershell
 docker exec hackhub-test-db mariadb -uroot -proot -e "CREATE DATABASE hackhub_identity_test; GRANT ALL PRIVILEGES ON hackhub_identity_test.* TO 'hackhub'@'%';"
-docker run -d --name hackhub-test-rabbitmq -p 127.0.0.1:5672:5672 -p 127.0.0.1:15672:15672 \
-  -e RABBITMQ_DEFAULT_USER=hackhub -e RABBITMQ_DEFAULT_PASS=hackhub rabbitmq:4-management
-DB_PORT=3307 DB_PASSWORD=hackhub DB_NAME=hackhub_test npm run test:coverage
-docker rm -f hackhub-test-db hackhub-test-rabbitmq
+$env:DB_HOST = '127.0.0.1'
+$env:DB_PORT = '13306'
+$env:DB_USER = 'hackhub'
+$env:DB_PASSWORD = 'hackhub'
+$env:DB_NAME = 'hackhub_test'
+$env:RABBITMQ_URL = 'amqp://hackhub:hackhub@127.0.0.1:15673'
+cd Backend
+npm ci
+npm test
+npm run test:coverage
+npm run test:identity
+cd ../frontend
+npm ci
+npx ng test --watch=false
 ```
+
+`test:identity` è un sottoinsieme della suite backend; `test:coverage` richiede copertura righe almeno del 90%. Al termine, dopo aver verificato che si tratti dei container temporanei creati sopra, eliminarli con `docker rm -f hackhub-test-db hackhub-test-rabbitmq`. Queste operazioni non riguardano i volumi di Compose.
 
 ## CI/CD (GitHub Actions)
 
@@ -156,7 +239,7 @@ Il workflow [.github/workflows/ci.yml](.github/workflows/ci.yml) viene eseguito 
    - Su pull request le immagini vengono solo costruite (nessuna pubblicazione).
    - Su push verso `main` le immagini vengono pubblicate su GHCR come `ghcr.io/<owner>/<repo>/hackhub-backend`, `ghcr.io/<owner>/<repo>/hackhub-identity` e `ghcr.io/<owner>/<repo>/hackhub-frontend`, con tag `latest`, nome del branch e SHA del commit. Usa il `GITHUB_TOKEN` (permesso `packages: write`), nessun segreto aggiuntivo.
 
-Il deploy non è ancora automatizzato: l'applicazione continua a essere avviata in locale con Docker Compose.
+L'applicazione viene avviata in locale con Docker Compose, come descritto nella sezione [avvio locale](#avvio-locale-con-docker-compose).
 
 Per riprodurre i controlli della pipeline in locale:
 

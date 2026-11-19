@@ -20,3 +20,12 @@ test('defines an installable manifest and production Angular service worker', ()
   assert.ok(ngswConfig.assetGroups[0].resources.files.includes('/manifest.webmanifest'));
   assert.ok(!ngswConfig.assetGroups.some((group) => group.resources?.urls?.some((url) => url.includes('/api'))));
 });
+
+test('routes local authentication to Identity before other API requests', () => {
+  const proxyConfig = JSON.parse(fs.readFileSync(path.join(frontendRoot, 'proxy.config.json'), 'utf8'));
+  const routes = Object.keys(proxyConfig);
+
+  assert.ok(routes.indexOf('/api/auth/**') < routes.indexOf('/api/**'));
+  assert.equal(proxyConfig['/api/auth/**'].target, 'http://localhost:3001');
+  assert.equal(proxyConfig['/api/**'].target, 'http://localhost:3000');
+});
