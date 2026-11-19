@@ -36,13 +36,13 @@ const { registerNotificationRoutes } = require('./modules/notification/notificat
 
 const { InboxRepository } = require('./modules/events/inbox-repository');
 const { InboxService } = require('./modules/events/inbox-service');
-const { registerEventRoutes } = require('./modules/events/inbox-controller');
-
-const { readServiceToken } = require('./security/service-token');
-
+const { RabbitMqConnection } = require('./messaging/rabbitmq-connection');
+const { EventConsumer } = require('./messaging/event-consumer');
 async function createApp({ env = process.env } = {}) {
   const port = Number(env.PORT || 3000);
   const runtimeEnvironment = env.NODE_ENV || 'development';
+  const rabbitMqUrl = env.RABBITMQ_URL;
+  if (!rabbitMqUrl) throw new Error('La variabile d\'ambiente RABBITMQ_URL è obbligatoria.');
   const database = createDatabase(env);
   await initializeSchema(database);
   await migrateSchema(database);
@@ -111,11 +111,16 @@ async function createApp({ env = process.env } = {}) {
   registerCompetitionRoutes({ app, auth, role, competitionService });
   registerSupportRoutes({ app, auth, role, supportService });
   registerNotificationRoutes({ app, auth, notificationService });
-  registerEventRoutes({ app, serviceToken: readServiceToken(env), inboxService: new InboxService(new InboxRepository(database)) });
   app.use(errorHandler);
   app.use(notFoundHandler);
 
-  return { app, database, port };
+  const connection = new RabbitMqConnection({ url: rabbitMqUrl });
+  const consumer = new EventConsumer({
+    connection,
+    inboxService: new InboxService(new InboxRepository(database)),
+  });
+
+  return { app, database, port, consumer, connection };
 }
 
 module.exports = { createApp };

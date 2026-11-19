@@ -119,7 +119,7 @@ test('identity startup failure closes the database pool and exits', async () => 
     ...productionEnvironment(),
     DB_NAME: 'hackhub_identity_test',
     HACKHUB_SERVICE_TOKEN: 'startup-test-service-token-at-least-32-characters',
-    BACKEND_SERVICE_URL: 'http://127.0.0.1:9',
+    RABBITMQ_URL: 'amqp://hackhub:hackhub@127.0.0.1:5672',
   };
   const seedResult = runNode(identityStartupScript, { ...identityEnvironment, NODE_ENV: 'development' });
   assert.equal(seedResult.status, 0, seedResult.stderr);

@@ -1,15 +1,10 @@
-const { serviceTokenHeader } = require('../../security/service-token');
-
-const deliveryTimeoutMs = 5000;
 // Waits before retrying after the 1st, 2nd, ... failed delivery. One more failure after the last wait dead-letters the event.
 const retryDelaysMs = [1000, 2000, 4000, 8000, 16000];
 
 class OutboxRelay {
-  constructor({ repository, targetUrl, serviceToken, fetchImpl = fetch, batchSize = 50 }) {
+  constructor({ repository, publisher, batchSize = 50 }) {
     this.repository = repository;
-    this.targetUrl = targetUrl.replace(/\/$/, '');
-    this.serviceToken = serviceToken;
-    this.fetchImpl = fetchImpl;
+    this.publisher = publisher;
     this.batchSize = batchSize;
     this.running = false;
     this.timer = null;
@@ -29,7 +24,7 @@ class OutboxRelay {
           await this.deliver(event);
         } catch (error) {
           const failures = event.attempts + 1;
-          if (error.permanent || failures > retryDelaysMs.length) {
+          if (failures > retryDelaysMs.length) {
             await this.repository.markDeadLettered(event.event_id, error.message);
             continue;
           }
@@ -45,26 +40,14 @@ class OutboxRelay {
     }
   }
 
+  // Marks the event as published only after RabbitMQ confirms it; a failed publish is retried from the outbox.
   async deliver(event) {
-    const response = await this.fetchImpl(`${this.targetUrl}/internal/events`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        [serviceTokenHeader]: this.serviceToken,
-      },
-      body: JSON.stringify({
-        id: event.event_id,
-        type: event.event_type,
-        occurredAt: event.created_at,
-        payload: JSON.parse(event.payload),
-      }),
-      signal: AbortSignal.timeout(deliveryTimeoutMs),
+    await this.publisher.publish({
+      id: event.event_id,
+      type: event.event_type,
+      occurredAt: event.created_at,
+      payload: JSON.parse(event.payload),
     });
-    if (response.ok) return;
-    const error = new Error(`Consegna rifiutata con stato ${response.status}.`);
-    // A 4xx is a permanent rejection (408 and 429 are transient and keep being retried).
-    error.permanent = response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429;
-    throw error;
   }
 
   start(intervalMs = 2000) {

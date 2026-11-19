@@ -2,7 +2,7 @@ const { createServer } = require('node:http');
 const { createIdentityApp } = require('./identity-app');
 
 if (require.main === module) {
-  createIdentityApp().then(({ app, database, port, outboxRelay }) => {
+  createIdentityApp().then(({ app, database, port, outboxRelay, publisher, connection }) => {
     const server = createServer(app).listen(port, () => {
       console.log(`HackHub Identity Service in ascolto sulla porta ${port}`);
     });
@@ -10,7 +10,12 @@ if (require.main === module) {
 
     const shutdown = () => {
       outboxRelay.stop();
-      server.close(() => database.end().then(() => process.exit(0)));
+      server.close(async () => {
+        await publisher.close();
+        await connection.close();
+        await database.end();
+        process.exit(0);
+      });
     };
     process.once('SIGTERM', shutdown);
     process.once('SIGINT', shutdown);

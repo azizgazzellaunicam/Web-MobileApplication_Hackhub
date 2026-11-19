@@ -4,6 +4,7 @@ const { initializeIdentitySchema } = require('../../src/database/identity-schema
 
 const identityDatabaseName = 'hackhub_identity_test';
 const testServiceToken = 'test-service-token-that-is-at-least-32-characters-long';
+const defaultRabbitMqUrl = 'amqp://hackhub:hackhub@127.0.0.1:5672';
 
 const tableOrder = [
   'notifications',
@@ -35,6 +36,7 @@ function applyDefaultDatabaseEnvironment() {
   process.env.DB_PASSWORD = process.env.DB_PASSWORD || 'hackhub';
   process.env.DB_NAME = process.env.DB_NAME || 'hackhub_test';
   process.env.DB_POOL_SIZE = process.env.DB_POOL_SIZE || '10';
+  process.env.RABBITMQ_URL = process.env.RABBITMQ_URL || defaultRabbitMqUrl;
 }
 
 function identityDatabaseEnvironment() {
@@ -78,13 +80,14 @@ async function resetIdentityDatabase(database) {
   }
 }
 
-async function startIdentityService({ backendUrl = 'http://127.0.0.1:9' } = {}) {
+async function startIdentityService({ rabbitMqUrl = process.env.RABBITMQ_URL || defaultRabbitMqUrl } = {}) {
   applyDefaultDatabaseEnvironment();
   process.env.HACKHUB_SERVICE_TOKEN = testServiceToken;
-  process.env.BACKEND_SERVICE_URL = backendUrl;
   const { createIdentityApp } = require('../../src/identity-app');
-  const { app, database, outboxRelay } = await createIdentityApp({
-    env: { ...identityDatabaseEnvironment(), BACKEND_SERVICE_URL: backendUrl },
+  const {
+    app, database, outboxRelay, publisher, connection,
+  } = await createIdentityApp({
+    env: { ...identityDatabaseEnvironment(), RABBITMQ_URL: rabbitMqUrl },
   });
   const server = app.listen(0);
   const baseUrl = `http://127.0.0.1:${server.address().port}`;
@@ -93,9 +96,12 @@ async function startIdentityService({ backendUrl = 'http://127.0.0.1:9' } = {}) 
     baseUrl,
     database,
     outboxRelay,
+    connection,
     close: async () => {
       outboxRelay.stop();
       server.close();
+      await publisher.close();
+      await connection.close();
       await database.end();
     },
   };
@@ -105,6 +111,7 @@ module.exports = {
   applyDefaultDatabaseEnvironment,
   createInitializedDatabase,
   createInitializedIdentityDatabase,
+  defaultRabbitMqUrl,
   resetDatabase,
   resetIdentityDatabase,
   startIdentityService,
