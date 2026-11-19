@@ -56,10 +56,20 @@ npm start
 
 `GET /health` verifica sia il processo HTTP sia la raggiungibilità MariaDB (`SELECT 1`).
 
+## Messaggistica (RabbitMQ)
+
+Identity pubblica gli eventi su RabbitMQ e il backend li consuma. Il flusso Outbox → RabbitMQ → Inbox, con topologia, retry e dead-letter, è descritto in [../docs/messaggistica.md](../docs/messaggistica.md).
+
+Variabile richiesta da Identity e dal backend:
+
+- `RABBITMQ_URL` (formato `amqp://utente:password@host:5672`). La password non deve contenere caratteri speciali URL (`@`, `:`, `/`, `%`, `#`).
+
+Il consumer della coda `hackhub.backend.events` viene avviato da `Backend/src/server.js`. `createApp` non lo avvia, quindi `api.test.js` e `role-workflow.test.js` non competono per la coda.
+
 ## Test
 
 ```bash
 npm test
 ```
 
-I test usano MariaDB e richiedono le variabili `DB_*` configurate.
+I test usano MariaDB e richiedono le variabili `DB_*` configurate. I test di integrazione tra Identity e backend (`event-relay.test.js`) richiedono anche RabbitMQ, con `RABBITMQ_URL` (default `amqp://hackhub:hackhub@127.0.0.1:5672`).
