@@ -49,12 +49,34 @@ services:
       start_period: 20s
     restart: unless-stopped
 
+  rabbitmq:
+    image: rabbitmq:4-management
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-hackhub}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?Set RABBITMQ_PASSWORD in .env}
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    ports:
+      - "127.0.0.1:${RABBITMQ_PORT:-5672}:5672"
+      - "127.0.0.1:${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+    networks:
+      - hackhub
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+
   identity:
     build:
       context: ./Backend
       dockerfile: Dockerfile.identity
     depends_on:
       identity-mariadb:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
     environment:
       NODE_ENV: production
@@ -68,7 +90,7 @@ services:
       HACKHUB_SEED_DEMO: "false"
       HACKHUB_JWT_SECRET: ${HACKHUB_JWT_SECRET:?Set HACKHUB_JWT_SECRET in .env}
       HACKHUB_SERVICE_TOKEN: ${HACKHUB_SERVICE_TOKEN:?Set HACKHUB_SERVICE_TOKEN in .env}
-      BACKEND_SERVICE_URL: http://backend:3000
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-hackhub}:${RABBITMQ_PASSWORD:?Set RABBITMQ_PASSWORD in .env}@rabbitmq:5672
       HACKHUB_ACCESS_TOKEN_TTL: ${HACKHUB_ACCESS_TOKEN_TTL:-15m}
       HACKHUB_REFRESH_TOKEN_TTL_SECONDS: ${HACKHUB_REFRESH_TOKEN_TTL_SECONDS:-604800}
       HACKHUB_JWT_ISSUER: ${HACKHUB_JWT_ISSUER:-hackhub-api}
@@ -96,6 +118,8 @@ services:
     depends_on:
       mariadb:
         condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
       identity:
         condition: service_healthy
     environment:
@@ -111,6 +135,7 @@ services:
       HACKHUB_JWT_SECRET: ${HACKHUB_JWT_SECRET:?Set HACKHUB_JWT_SECRET in .env}
       HACKHUB_SERVICE_TOKEN: ${HACKHUB_SERVICE_TOKEN:?Set HACKHUB_SERVICE_TOKEN in .env}
       IDENTITY_SERVICE_URL: http://identity:3001
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-hackhub}:${RABBITMQ_PASSWORD:?Set RABBITMQ_PASSWORD in .env}@rabbitmq:5672
       HACKHUB_ACCESS_TOKEN_TTL: ${HACKHUB_ACCESS_TOKEN_TTL:-15m}
       HACKHUB_REFRESH_TOKEN_TTL_SECONDS: ${HACKHUB_REFRESH_TOKEN_TTL_SECONDS:-604800}
       HACKHUB_JWT_ISSUER: ${HACKHUB_JWT_ISSUER:-hackhub-api}
@@ -153,3 +178,4 @@ networks:
 volumes:
   mariadb_data:
   identity_mariadb_data:
+  rabbitmq_data:
