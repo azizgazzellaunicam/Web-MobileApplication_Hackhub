@@ -2,6 +2,36 @@
 
 HackHub è una piattaforma per la gestione di hackathon, realizzata con Angular 22, Node.js, Express e MariaDB.
 
+## Avvio rapido
+
+1. Avviare Docker Desktop (o Docker Engine).
+2. Nella cartella del progetto, creare il file `.env` copiando `.env.example` (su PowerShell: `Copy-Item .env.example .env`) e compilare le password e i segreti indicati nella [guida tecnica](#avvio-locale-con-docker-compose).
+3. Avviare l'applicazione:
+
+```powershell
+docker compose up --build -d
+```
+
+4. Aprire `http://localhost` nel browser.
+
+Per fermare l'applicazione usare `docker compose down`. **Non usare `docker compose down -v`**: cancella anche i dati salvati.
+
+## Credenziali demo
+
+| Ruolo | Email | Password |
+| --- | --- | --- |
+| ORGANIZER | `organizer.demo@hackhub.it` | `accountTest!` |
+| JUDGE | `judge.demo@hackhub.it` | `accountTest!` |
+| MENTOR | `mentor.demo@hackhub.it` | `accountTest!` |
+
+Un account standard (`USER`) non è precreato: registrarsi dalla pagina di registrazione dell'interfaccia.
+
+---
+
+# Documentazione tecnica
+
+Questa sezione descrive architettura, configurazione, test e CI/CD. Non serve per avviare l'applicazione.
+
 ## Architettura
 
 ```mermaid
