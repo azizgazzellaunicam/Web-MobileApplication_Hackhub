@@ -5,7 +5,7 @@ HackHub è una piattaforma per la gestione di hackathon, realizzata con Angular 
 ## Avvio rapido
 
 1. Avviare Docker Desktop (o Docker Engine).
-2. Nella cartella del progetto, creare il file `.env` copiando `.env.example` (su PowerShell: `Copy-Item .env.example .env`) e compilare le password e i segreti indicati nella [guida tecnica](#avvio-locale-con-docker-compose).
+2. Nella cartella del progetto, creare il file `.env` copiando `.env.example` (su PowerShell: `Copy-Item .env.example .env`) e compilare le password e i segreti indicati in [configurazione `.env`](#configurazione-env-per-docker-compose).
 3. Avviare l'applicazione:
 
 ```powershell
@@ -48,7 +48,7 @@ flowchart LR
 
 Il backend contiene i moduli Team, Hackathon, Competition, Support e Notification. Identity gestisce utenti, sessioni e token nel proprio database. Il [diagramma architetturale](docs/diagramma-architetturale.md) e i dettagli su [messaggistica, retry e dead-letter](docs/messaggistica.md) sono disponibili nella documentazione.
 
-## Deployment locale
+## Deployment locale con Docker Compose
 
 Il deployment seguente usa Docker Compose su una sola macchina. Le porte pubblicate sono vincolate a `127.0.0.1`, quindi accessibili solo dalla macchina locale.
 
@@ -79,9 +79,9 @@ flowchart TB
 
 MariaDB è raggiungibile dall'host solo su `127.0.0.1:3306` e `127.0.0.1:3307`; RabbitMQ solo su `127.0.0.1:5672` e la console su `127.0.0.1:15672`. Le porte host sono configurabili in `.env`; backend e Identity sono raggiungibili solo sulla rete Docker. La porta frontend predefinita è `80`, modificabile con `FRONTEND_PORT`. Il [diagramma di deployment](docs/diagramma-deployment.md) descrive i container, la rete e i volumi.
 
-## Avvio locale con Docker Compose
+## Configurazione `.env` per Docker Compose
 
-Prerequisiti: Docker Engine o Docker Desktop avviato e plugin Docker Compose. Il build scarica le immagini necessarie. Eseguire i comandi dalla root del repository; su Windows usare PowerShell:
+Prima di avviare lo stack il file `.env` deve contenere i valori seguenti. I comandi di avvio sono in [Avvio rapido](#avvio-rapido). Eseguire i comandi dalla root del repository; su Windows usare PowerShell:
 
 ```powershell
 if (-not (Test-Path .env)) { Copy-Item .env.example .env }
@@ -94,14 +94,7 @@ Su Linux/macOS, creare il file solo se non esiste: `test -e .env || cp .env.exam
 
 Per `RABBITMQ_PASSWORD` usare caratteri alfanumerici o esadecimali: è inserita in un URL AMQP e caratteri speciali come `@`, `:`, `/`, `%` e `#` non sono supportati. `.env` è ignorato da Git. Le credenziali MariaDB e RabbitMQ inizializzano i volumi al primo avvio: cambiare `.env` successivamente non aggiorna automaticamente gli utenti già presenti.
 
-```bash
-docker compose config --quiet
-docker compose up --build -d
-docker compose ps
-docker compose logs -f
-```
-
-Aprire `http://localhost` o `http://localhost:<FRONTEND_PORT>` se si è cambiata la porta. L'endpoint `/health` sulla stessa origine verifica backend e database di dominio. Compose usa `NODE_ENV=production` e disabilita i dati demo: registrare un utente dall'interfaccia. Le registrazioni creano utenti con ruolo `USER`. Per fermare lo stack usare `docker compose down`; i volumi restano. **Non usare `docker compose down -v` se si vogliono conservare i dati**.
+Per validare la configurazione prima dell'avvio: `docker compose config --quiet`. Se si cambia `FRONTEND_PORT`, l'app è su `http://localhost:<FRONTEND_PORT>`. L'endpoint `/health` sulla stessa origine verifica backend e database di dominio. Compose usa `NODE_ENV=production` e disabilita i dati demo; le registrazioni creano utenti con ruolo `USER`. **Non usare `docker compose down -v` se si vogliono conservare i dati**.
 
 ## Sviluppo con servizi Node locali
 
@@ -256,7 +249,7 @@ Il workflow [.github/workflows/ci.yml](.github/workflows/ci.yml) viene eseguito 
    - Su pull request le immagini vengono solo costruite (nessuna pubblicazione).
    - Su push verso `main` le immagini vengono pubblicate su GHCR come `ghcr.io/<owner>/<repo>/hackhub-backend`, `ghcr.io/<owner>/<repo>/hackhub-identity` e `ghcr.io/<owner>/<repo>/hackhub-frontend`, con tag `latest`, nome del branch e SHA del commit. Usa il `GITHUB_TOKEN` (permesso `packages: write`), nessun segreto aggiuntivo.
 
-L'applicazione viene avviata in locale con Docker Compose, come descritto nella sezione [avvio locale](#avvio-locale-con-docker-compose).
+L'applicazione viene avviata in locale con Docker Compose, come descritto in [Avvio rapido](#avvio-rapido) e nella sezione [configurazione `.env`](#configurazione-env-per-docker-compose).
 
 Per riprodurre i controlli della pipeline in locale:
 
