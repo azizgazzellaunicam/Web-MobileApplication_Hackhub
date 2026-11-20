@@ -5,7 +5,13 @@ HackHub è una piattaforma per la gestione di hackathon, realizzata con Angular 
 ## Avvio rapido
 
 1. Avviare Docker Desktop (o Docker Engine).
-2. Nella cartella del progetto, creare il file `.env` copiando `.env.example` (su PowerShell: `Copy-Item .env.example .env`) e compilare le password e i segreti indicati in [configurazione `.env`](#configurazione-env-per-docker-compose).
+2. Nella cartella del progetto, copiare il file di esempio:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Aprire `.env`, inserire le password e i secret richiesti seguendo la sezione [Configurazione `.env`](#configurazione-env-per-docker-compose) più avanti nel README.
 3. Avviare l'applicazione:
 
 ```powershell
